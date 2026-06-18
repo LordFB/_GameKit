@@ -1,0 +1,153 @@
+.shell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-strong);
+  transition: border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.shell:hover:not(.disabled) {
+  border-color: var(--border-strong);
+}
+.shell:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring-tight);
+}
+
+.sm {
+  height: 36px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+.md {
+  height: 42px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-md);
+}
+.lg {
+  height: 48px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-base);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.input::placeholder {
+  color: var(--text-subtle);
+}
+
+.affix {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex: none;
+}
+
+.iconButton {
+  display: inline-flex;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-xs);
+}
+.iconButton:hover {
+  color: var(--text-strong);
+}
+.iconButton:focus-visible {
+  box-shadow: var(--focus-ring-tight);
+  outline: none;
+}
+
+/* status */
+.status_valid {
+  border-color: var(--color-success);
+}
+.status_valid.shell:focus-within {
+  box-shadow: 0 0 0 2px var(--color-success);
+}
+.status_invalid {
+  border-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 4%, var(--surface-1));
+}
+.status_invalid.shell:focus-within {
+  box-shadow: 0 0 0 2px var(--color-danger);
+}
+
+.disabled {
+  background: var(--surface-3);
+  color: var(--text-subtle);
+  cursor: not-allowed;
+  border-color: var(--border-subtle);
+}
+.disabled .input {
+  cursor: not-allowed;
+}
+
+/* textarea */
+.textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: var(--space-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.textarea::placeholder {
+  color: var(--text-subtle);
+}
+.textarea:hover:not(.disabled) {
+  border-color: var(--border-strong);
+}
+.textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring-tight);
+}
+
+/* select */
+.selectShell {
+  position: relative;
+  padding-right: var(--space-2);
+}
+.select {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding-right: var(--space-5);
+}
+.select:disabled {
+  cursor: not-allowed;
+}
+.selectChevron {
+  position: absolute;
+  right: var(--space-3);
+  color: var(--text-muted);
+  pointer-events: none;
+}

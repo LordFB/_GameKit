@@ -1,0 +1,95 @@
+.barWrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+}
+.bar {
+  position: relative;
+  flex: 1;
+  background: var(--hud-track);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.sm {
+  height: 6px;
+}
+.md {
+  height: 10px;
+}
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--duration-slow) var(--ease-out);
+}
+.primary {
+  background: var(--color-primary);
+}
+.success {
+  background: var(--color-success);
+}
+.warning {
+  background: var(--color-warning);
+}
+.danger {
+  background: var(--color-danger);
+}
+.barLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  min-width: 34px;
+  text-align: right;
+}
+
+.striped {
+  background-image: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.2) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0.2) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 1rem 1rem;
+  animation: gk-progress-stripes 1s linear infinite;
+}
+@keyframes gk-progress-stripes {
+  from {
+    background-position: 1rem 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* circular */
+.ringWrapper {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+.ringFill {
+  transition: stroke-dashoffset var(--duration-slow) var(--ease-out);
+}
+.ringFill.primary {
+  stroke: var(--color-primary);
+}
+.ringFill.success {
+  stroke: var(--color-success);
+}
+.ringFill.warning {
+  stroke: var(--color-warning);
+}
+.ringFill.danger {
+  stroke: var(--color-danger);
+}
+.ringLabel {
+  position: absolute;
+  font-size: var(--text-md);
+  font-weight: var(--font-bold);
+  color: var(--text-strong);
+}

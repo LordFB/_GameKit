@@ -1,0 +1,80 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  font-weight: var(--font-medium);
+  text-align: left;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.item:hover {
+  background: var(--surface-3);
+  color: var(--text-strong);
+}
+.item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-tight);
+}
+.item[data-state="selected"] {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-soft-fg);
+  font-weight: var(--font-semibold);
+  outline: none;
+  position: relative;
+}
+.item[data-state="selected"]::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+.itemIcon {
+  display: inline-flex;
+  flex: none;
+}
+.itemLabel {
+  flex: 1;
+}
+.itemBadge {
+  font-size: var(--text-2xs);
+  font-weight: var(--font-bold);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff;
+}
+.footer {
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}

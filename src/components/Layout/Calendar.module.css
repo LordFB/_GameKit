@@ -1,0 +1,106 @@
+.calendar {
+  width: 100%;
+  max-width: 320px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+.monthLabel {
+  font-size: var(--text-md);
+  font-weight: var(--font-bold);
+  color: var(--text-strong);
+}
+.nav {
+  display: flex;
+  gap: var(--space-1);
+}
+.navButton {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.navButton:hover {
+  background: var(--surface-3);
+  color: var(--text-strong);
+}
+.navButton:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-tight);
+}
+
+.weekdays,
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.weekday {
+  display: grid;
+  place-items: center;
+  height: 28px;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-bold);
+  color: var(--text-subtle);
+  text-transform: uppercase;
+}
+.day {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-default);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.day:hover {
+  background: var(--surface-3);
+}
+.day:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-tight);
+}
+.today {
+  color: var(--color-primary);
+  font-weight: var(--font-bold);
+}
+.today::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--color-primary);
+  border-radius: var(--radius-md);
+}
+.selected {
+  background: var(--color-primary) !important;
+  color: var(--color-on-primary) !important;
+  outline: none;
+}
+.selected.today::before {
+  border-color: transparent;
+}
+.eventDot {
+  position: absolute;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-warning);
+}
+.selected .eventDot {
+  background: #fff;
+}

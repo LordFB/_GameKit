@@ -1,0 +1,26 @@
+{
+  "name": "game-toolkit-design-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GameKit — a CSS-compatible, extensible design system for game toolkits",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^16.2.9",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.18.0",
+    "eslint-config-next": "^16.2.9",
+    "typescript": "^5.5.3"
+  }
+}

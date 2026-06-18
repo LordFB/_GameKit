@@ -1,0 +1,291 @@
+/* ============================================================================
+   GameKit Design Tokens
+   ----------------------------------------------------------------------------
+   The single source of truth for the design system. Everything is a CSS custom
+   property so the system is themeable and extensible at runtime — override any
+   token on :root (or a scoped element) to re-skin the whole toolkit.
+
+   Layers:
+     1. Primitive tokens   — raw values (palette ramps, spacing scale, radii)
+     2. Semantic tokens    — intent-based aliases (surface, text, border, focus)
+     3. Component tokens    — defined alongside components, referencing semantics
+
+   Theme is switched via [data-theme="light" | "dark"] on the <html> element.
+   ========================================================================== */
+
+:root {
+  /* ---- 1. PRIMITIVE: brand + status ramps (from the component board) ------ */
+  --indigo-50: #eef2ff;
+  --indigo-100: #e0e7ff;
+  --indigo-200: #c7d2fe;
+  --indigo-300: #a5b4fc;
+  --indigo-400: #818cf8;
+  --indigo-500: #6366f1; /* Primary */
+  --indigo-600: #4f46e5;
+  --indigo-700: #4338ca;
+  --indigo-800: #3730a3;
+
+  --green-100: #dcfce7;
+  --green-200: #bbf7d0;
+  --green-500: #22c55e; /* Success */
+  --green-600: #16a34a;
+  --green-700: #15803d;
+
+  --amber-100: #fef3c7;
+  --amber-200: #fde68a;
+  --amber-500: #f59e0b; /* Warning */
+  --amber-600: #d97706;
+  --amber-700: #b45309;
+
+  --red-100: #fee2e2;
+  --red-200: #fecaca;
+  --red-500: #ef4444; /* Danger */
+  --red-600: #dc2626;
+  --red-700: #b91c1c;
+
+  --sky-500: #0ea5e9; /* Info */
+  --sky-100: #e0f2fe;
+
+  /* Neutral ramp (#6B7280 is the board's "Neutral") */
+  --gray-0: #ffffff;
+  --gray-25: #fcfcfd;
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-150: #eceef1;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280; /* Neutral */
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+  --gray-950: #0b0f1a;
+
+  /* ---- PRIMITIVE: spacing scale (4px base) ------------------------------- */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* ---- PRIMITIVE: radii -------------------------------------------------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+
+  /* ---- PRIMITIVE: typography -------------------------------------------- */
+  --font-sans: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: "SFMono-Regular", "JetBrains Mono", "Fira Code", ui-monospace,
+    Menlo, Consolas, monospace;
+
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-xs: 0.75rem; /* 12px */
+  --text-sm: 0.8125rem; /* 13px */
+  --text-md: 0.875rem; /* 14px */
+  --text-base: 0.9375rem; /* 15px */
+  --text-lg: 1.0625rem; /* 17px */
+  --text-xl: 1.25rem; /* 20px */
+  --text-2xl: 1.5rem; /* 24px */
+  --text-3xl: 2rem; /* 32px */
+
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-extrabold: 800;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* ---- PRIMITIVE: motion ------------------------------------------------ */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 280ms;
+
+  /* ---- PRIMITIVE: z-index scale ---------------------------------------- */
+  --z-base: 1;
+  --z-sticky: 100;
+  --z-dropdown: 1000;
+  --z-overlay: 1100;
+  --z-modal: 1200;
+  --z-toast: 1300;
+  --z-tooltip: 1400;
+}
+
+/* ============================================================================
+   2. SEMANTIC TOKENS — LIGHT THEME (default)
+   ========================================================================== */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* intent colors */
+  --color-primary: var(--indigo-500);
+  --color-primary-hover: var(--indigo-600);
+  --color-primary-active: var(--indigo-700);
+  --color-primary-soft: var(--indigo-50);
+  --color-primary-soft-fg: var(--indigo-700);
+  --color-on-primary: #ffffff;
+
+  --color-success: var(--green-500);
+  --color-success-soft: var(--green-100);
+  --color-success-fg: var(--green-700);
+
+  --color-warning: var(--amber-500);
+  --color-warning-soft: var(--amber-100);
+  --color-warning-fg: var(--amber-700);
+
+  --color-danger: var(--red-500);
+  --color-danger-hover: var(--red-600);
+  --color-danger-soft: var(--red-100);
+  --color-danger-fg: var(--red-700);
+
+  --color-info: var(--sky-500);
+  --color-info-soft: var(--sky-100);
+  --color-info-fg: #0369a1;
+
+  --color-neutral: var(--gray-500);
+  --color-neutral-soft: var(--gray-100);
+  --color-neutral-fg: var(--gray-700);
+
+  /* surfaces */
+  --surface-app: var(--gray-100);
+  --surface-1: var(--gray-0);
+  --surface-2: var(--gray-50);
+  --surface-3: var(--gray-100);
+  --surface-inverse: var(--gray-900);
+  --surface-overlay: rgba(17, 24, 39, 0.45);
+
+  /* text */
+  --text-strong: var(--gray-900);
+  --text-default: var(--gray-700);
+  --text-muted: var(--gray-500);
+  --text-subtle: var(--gray-400);
+  --text-inverse: var(--gray-0);
+  --text-on-accent: #ffffff;
+
+  /* borders */
+  --border-subtle: var(--gray-200);
+  --border-default: var(--gray-300);
+  --border-strong: var(--gray-400);
+  --border-focus: var(--indigo-500);
+
+  /* focus ring (gamepad/keyboard-safe, high contrast — GFR-01) */
+  --focus-ring: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--color-primary);
+  --focus-ring-tight: 0 0 0 2px var(--color-primary);
+
+  /* elevation */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 4px 8px -2px rgba(16, 24, 40, 0.08),
+    0 2px 4px -2px rgba(16, 24, 40, 0.05);
+  --shadow-lg: 0 12px 24px -6px rgba(16, 24, 40, 0.12),
+    0 4px 8px -4px rgba(16, 24, 40, 0.06);
+  --shadow-xl: 0 24px 48px -12px rgba(16, 24, 40, 0.18);
+  --shadow-primary: 0 8px 20px -6px rgba(99, 102, 241, 0.45);
+
+  /* HUD bars (section: HUD-style status) */
+  --hud-health: var(--red-500);
+  --hud-stamina: var(--green-500);
+  --hud-mana: var(--indigo-500);
+  --hud-xp: var(--amber-500);
+  --hud-track: var(--gray-200);
+}
+
+/* ============================================================================
+   2b. SEMANTIC TOKENS — DARK THEME
+   ========================================================================== */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-primary: var(--indigo-400);
+  --color-primary-hover: var(--indigo-300);
+  --color-primary-active: var(--indigo-200);
+  --color-primary-soft: rgba(99, 102, 241, 0.16);
+  --color-primary-soft-fg: var(--indigo-200);
+  --color-on-primary: #0b0f1a;
+
+  --color-success: #4ade80;
+  --color-success-soft: rgba(34, 197, 94, 0.16);
+  --color-success-fg: #86efac;
+
+  --color-warning: #fbbf24;
+  --color-warning-soft: rgba(245, 158, 11, 0.16);
+  --color-warning-fg: #fcd34d;
+
+  --color-danger: #f87171;
+  --color-danger-hover: #ef4444;
+  --color-danger-soft: rgba(239, 68, 68, 0.16);
+  --color-danger-fg: #fca5a5;
+
+  --color-info: #38bdf8;
+  --color-info-soft: rgba(14, 165, 233, 0.16);
+  --color-info-fg: #7dd3fc;
+
+  --color-neutral: var(--gray-400);
+  --color-neutral-soft: rgba(148, 163, 184, 0.14);
+  --color-neutral-fg: var(--gray-300);
+
+  --surface-app: #0b0f1a;
+  --surface-1: #131826;
+  --surface-2: #1a2030;
+  --surface-3: #232a3b;
+  --surface-inverse: var(--gray-50);
+  --surface-overlay: rgba(2, 6, 16, 0.6);
+
+  --text-strong: #f3f5f9;
+  --text-default: #c7cdd9;
+  --text-muted: #8b93a7;
+  --text-subtle: #5f6880;
+  --text-inverse: var(--gray-900);
+  --text-on-accent: #0b0f1a;
+
+  --border-subtle: #232a3b;
+  --border-default: #2e3750;
+  --border-strong: #404a68;
+  --border-focus: var(--indigo-400);
+
+  --focus-ring: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--color-primary);
+  --focus-ring-tight: 0 0 0 2px var(--color-primary);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 10px -2px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 14px 28px -8px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 28px 56px -16px rgba(0, 0, 0, 0.7);
+  --shadow-primary: 0 8px 22px -6px rgba(99, 102, 241, 0.55);
+
+  --hud-health: #f87171;
+  --hud-stamina: #4ade80;
+  --hud-mana: #818cf8;
+  --hud-xp: #fbbf24;
+  --hud-track: #232a3b;
+}
+
+/* Respect user motion preference (NFR: accessibility) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

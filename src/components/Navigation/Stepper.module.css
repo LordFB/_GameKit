@@ -1,0 +1,65 @@
+.stepper {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+}
+.marker {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-sm);
+  flex: none;
+  transition: all var(--duration-base) var(--ease-out);
+}
+.complete {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.active {
+  background: var(--surface-1);
+  color: var(--color-primary);
+  border: 2px solid var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
+}
+.upcoming {
+  background: var(--surface-3);
+  color: var(--text-subtle);
+  border: 1px solid var(--border-default);
+}
+.text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.label {
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  color: var(--text-strong);
+}
+.step[data-state="upcoming"] .label {
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+}
+.description {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.connector {
+  flex: 1;
+  height: 2px;
+  margin: 0 var(--space-3);
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+}
+.connectorDone {
+  background: var(--color-primary);
+}

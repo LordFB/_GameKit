@@ -1,0 +1,82 @@
+.wrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-md);
+}
+.th {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.sortButton:hover {
+  color: var(--text-strong);
+}
+.sortButton:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-tight);
+  border-radius: var(--radius-xs);
+}
+.sortIcon {
+  opacity: 0.4;
+}
+.sortActive {
+  opacity: 1;
+  color: var(--color-primary);
+}
+
+.tr {
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.tr:not(:last-child) .td {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.clickable {
+  cursor: pointer;
+}
+.clickable:hover {
+  background: var(--surface-2);
+}
+.tr[data-state="selected"] {
+  background: var(--color-primary-soft);
+  outline: none;
+}
+.td {
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-default);
+  vertical-align: middle;
+}
+
+.left {
+  text-align: left;
+}
+.right {
+  text-align: right;
+}
+.center {
+  text-align: center;
+}

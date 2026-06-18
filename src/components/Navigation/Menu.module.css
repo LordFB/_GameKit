@@ -1,0 +1,101 @@
+.root {
+  position: relative;
+  display: inline-flex;
+}
+.triggerButton {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  border-radius: var(--radius-full);
+}
+.triggerButton:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  min-width: 220px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  z-index: var(--z-dropdown);
+  animation: gk-pop-in var(--duration-fast) var(--ease-out);
+}
+.start {
+  left: 0;
+}
+.end {
+  right: 0;
+}
+
+.sectionLabel {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text-default);
+  font-size: var(--text-md);
+  text-align: left;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.item:hover:not(:disabled),
+.item:focus-visible {
+  background: var(--surface-3);
+  color: var(--text-strong);
+  outline: none;
+}
+.item:disabled {
+  color: var(--text-subtle);
+  cursor: not-allowed;
+}
+.danger {
+  color: var(--color-danger);
+}
+.danger:hover:not(:disabled),
+.danger:focus-visible {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+.itemIcon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+.danger .itemIcon {
+  color: var(--color-danger);
+}
+.itemLabel {
+  flex: 1;
+}
+.shortcut {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-subtle);
+  background: var(--surface-3);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+}
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-2) 0;
+}

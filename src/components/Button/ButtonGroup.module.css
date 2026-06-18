@@ -1,0 +1,61 @@
+.group {
+  display: inline-flex;
+  padding: 4px;
+  gap: 2px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-4);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+  font-size: var(--text-md);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.segment:hover {
+  color: var(--text-strong);
+}
+.segment[data-state="selected"] {
+  background: var(--surface-1);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  outline: none;
+}
+.segment:focus-visible {
+  box-shadow: var(--focus-ring-tight);
+}
+
+/* split button */
+.split {
+  display: inline-flex;
+}
+.splitMain {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: none;
+}
+.splitMenu {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  box-shadow: none;
+  position: relative;
+}
+.splitMenu::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.25);
+}

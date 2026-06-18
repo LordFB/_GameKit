@@ -1,0 +1,115 @@
+.wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.track {
+  position: relative;
+  flex: 1;
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+/* base rail */
+.track::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--border-default);
+}
+/* filled portion (single) */
+.track:not(.rangeTrack)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: var(--pct);
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+.disabled::after {
+  background: var(--border-strong) !important;
+}
+
+.input {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 24px;
+  cursor: pointer;
+  z-index: 2;
+}
+.input:disabled {
+  cursor: not-allowed;
+}
+.input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: #fff;
+  border: 2px solid var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.input::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.15);
+}
+.input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: #fff;
+  border: 2px solid var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+}
+.input:focus-visible::-webkit-slider-thumb {
+  box-shadow: var(--focus-ring);
+}
+.input:focus-visible::-moz-range-thumb {
+  box-shadow: var(--focus-ring);
+}
+
+.value {
+  min-width: 56px;
+  text-align: center;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-strong);
+  padding: 2px 8px;
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+}
+
+/* range — fill between thumbs */
+.rangeTrack::after {
+  content: "";
+  position: absolute;
+  left: var(--lo);
+  width: calc(var(--hi) - var(--lo));
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+.rangeInput {
+  position: absolute;
+  inset-inline: 0;
+  pointer-events: none;
+}
+.rangeInput::-webkit-slider-thumb {
+  pointer-events: auto;
+}
+.rangeInput::-moz-range-thumb {
+  pointer-events: auto;
+}

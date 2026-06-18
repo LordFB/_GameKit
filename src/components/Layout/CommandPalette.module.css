@@ -1,0 +1,119 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: var(--surface-overlay);
+  backdrop-filter: blur(2px);
+  animation: gk-fade-in var(--duration-base) var(--ease-out);
+}
+.palette {
+  width: min(560px, calc(100vw - 2rem));
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+  animation: gk-pop-in var(--duration-base) var(--ease-spring);
+}
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.searchIcon {
+  color: var(--text-muted);
+  flex: none;
+}
+.input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-strong);
+  font-size: var(--text-lg);
+}
+.input::placeholder {
+  color: var(--text-subtle);
+}
+.esc {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-subtle);
+  background: var(--surface-3);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+}
+
+.results {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+.noResults {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  text-align: left;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--text-default);
+}
+.itemActive {
+  background: var(--color-primary-soft);
+}
+.itemIcon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--text-muted);
+  flex: none;
+}
+.itemActive .itemIcon {
+  background: var(--color-primary);
+  color: #fff;
+}
+.itemText {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.itemLabel {
+  font-size: var(--text-md);
+  font-weight: var(--font-medium);
+  color: var(--text-strong);
+}
+.itemHint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.shortcut {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-subtle);
+  background: var(--surface-3);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+  flex: none;
+}

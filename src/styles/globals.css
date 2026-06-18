@@ -1,0 +1,168 @@
+@import "./tokens.css";
+
+/* ============================================================================
+   Base reset
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--text-default);
+  background: var(--surface-app);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--text-strong);
+  line-height: var(--leading-tight);
+  font-weight: var(--font-semibold);
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+img,
+svg,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+ul,
+ol {
+  list-style: none;
+  padding: 0;
+}
+
+/* ============================================================================
+   Shared interaction architecture (spec §2.1 — machine-readable state model)
+   Any component can opt into these by exposing data-* attributes.
+   ========================================================================== */
+:where(button, a, [role="button"], input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+[data-state="selected"] {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+[data-loading="true"] {
+  pointer-events: none;
+  opacity: 0.72;
+  cursor: progress;
+}
+
+[data-invalid="true"] {
+  border-color: var(--color-danger) !important;
+}
+
+[data-disabled="true"],
+:disabled {
+  cursor: not-allowed;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* ============================================================================
+   Accessibility utilities
+   ========================================================================== */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Scrollbar styling for in-app scroll areas */
+.gk-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.gk-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.gk-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.gk-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+  background-clip: content-box;
+}
+
+@keyframes gk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes gk-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+@keyframes gk-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes gk-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+}
+@keyframes gk-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}

@@ -1,0 +1,68 @@
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.row:hover {
+  background: var(--surface-2);
+}
+.you {
+  background: var(--color-primary-soft);
+  outline: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+.rank {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
+  color: var(--text-muted);
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+}
+.medal1 {
+  background: linear-gradient(135deg, #fde047, #f59e0b);
+  color: #fff;
+}
+.medal2 {
+  background: linear-gradient(135deg, #e5e7eb, #9ca3af);
+  color: #fff;
+}
+.medal3 {
+  background: linear-gradient(135deg, #fdba74, #c2410c);
+  color: #fff;
+}
+.name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  color: var(--text-strong);
+  min-width: 0;
+}
+.youTag {
+  font-size: var(--text-2xs);
+  font-weight: var(--font-bold);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff;
+}
+.score {
+  font-size: var(--text-md);
+  font-weight: var(--font-bold);
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
