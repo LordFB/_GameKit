@@ -47,7 +47,7 @@ import type { Snippet } from "./storage";
 import { runSnippet, RUNNER_MODES, RUNNER_GLOBALS } from "./testRunner";
 import type { RunOutcome, RunnerMode } from "./testRunner";
 import { captureScreenshotPair, runViaBridge } from "./bridge";
-import type { RequestCookie } from "./bridge";
+import type { RequestCookie, RequestHeader } from "./bridge";
 import { diffScreenshots } from "./visualDiff";
 import { useSelectorPicker } from "./useSelectorPicker";
 import { MonacoSnippetEditor } from "./monaco/MonacoSnippetEditor";
@@ -82,6 +82,10 @@ interface TabState {
 }
 
 interface CookieDraft extends RequestCookie {
+  id: string;
+}
+
+interface HeaderDraft extends RequestHeader {
   id: string;
 }
 
@@ -120,14 +124,16 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   // Unsaved edits, restored from localStorage so a refresh doesn't lose work.
   const [drafts, setDrafts] = useState<TabState>(() => loadDrafts());
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [editingDescriptionId, setEditingDescriptionId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [runnerMode, setRunnerMode] = useState<RunnerMode>("in-page");
   // Page the Playwright bridge drives. Relative paths resolve against the dev origin.
   const [bridgeUrl, setBridgeUrl] = useState("/");
-  const [selectorPanelTab, setSelectorPanelTab] = useState<"cookies">("cookies");
+  const [selectorPanelTab, setSelectorPanelTab] = useState<"cookies" | "headers">("cookies");
   // Cookies are intentionally session-only: this is a development console and
   // persisting auth/session values to localStorage would be surprising.
   const [requestCookies, setRequestCookies] = useState<CookieDraft[]>([]);
+  const [requestHeaders, setRequestHeaders] = useState<HeaderDraft[]>([]);
   // Opt-in screen recording of the Playwright session (bridge runner only).
   const [recordVideo, setRecordVideo] = useState(false);
   // Opt-in: let in-page page.goto() load a same-origin route into an iframe.
@@ -230,6 +236,18 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
     [persist, snippets]
   );
 
+  const handleDescriptionChange = useCallback(
+    (id: string, description: string) => {
+      persist(
+        snippets.map((s) =>
+          s.id === id ? { ...s, description: description.trim(), updatedAt: Date.now() } : s
+        )
+      );
+      setEditingDescriptionId(null);
+    },
+    [persist, snippets]
+  );
+
   const updateDraft = useCallback(
     (code: string) => {
       if (!active) return;
@@ -254,6 +272,9 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
           recordVideo,
           requestCookies
             .filter((cookie) => cookie.name.trim())
+            .map(({ name, value }) => ({ name: name.trim(), value })),
+          requestHeaders
+            .filter((header) => header.name.trim())
             .map(({ name, value }) => ({ name: name.trim(), value }))
         );
       }
@@ -275,6 +296,7 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
       testIdAttribute,
       recordVideo,
       requestCookies,
+      requestHeaders,
       iframeNavigation,
     ]
   );
@@ -425,7 +447,8 @@ ${exportedBody}
   // Only fires when no modal is open and we aren't mid-rename or picking, so
   // there's no precedence ladder reading stale modal state.
   const panelEscapeActive =
-    open && !visual.modalOpen && !screenshotGallery && !picker.active && renamingId === null;
+    open && !visual.modalOpen && !screenshotGallery && !picker.active &&
+    renamingId === null && editingDescriptionId === null;
   useEscape(panelEscapeActive, () => setOpen(false));
 
   const panelRef = useFocusTrap<HTMLDivElement>(open && !overlayHidden);
@@ -571,7 +594,11 @@ ${exportedBody}
                         tabIndex={0}
                         className="tdd-snippet"
                         data-state={
-                          renamingId === s.id ? "renaming" : s.id === active?.id ? "active" : undefined
+                          renamingId === s.id || editingDescriptionId === s.id
+                            ? "renaming"
+                            : s.id === active?.id
+                              ? "active"
+                              : undefined
                         }
                         onClick={() => setActiveId(s.id)}
                         onDoubleClick={() => setRenamingId(s.id)}
@@ -595,6 +622,7 @@ ${exportedBody}
                               onClick={(e) => e.stopPropagation()}
                               onBlur={(e) => handleRename(s.id, e.target.value)}
                               onKeyDown={(e) => {
+                                e.stopPropagation();
                                 if (e.key === "Enter") handleRename(s.id, e.currentTarget.value);
                                 if (e.key === "Escape") setRenamingId(null);
                               }}
@@ -605,7 +633,33 @@ ${exportedBody}
                               {drafts[s.id] !== undefined && drafts[s.id] !== s.code ? " •" : ""}
                             </h3>
                           )}
-                          <p className="tdd-snippet-description">{s.description || "No description"}</p>
+                          {editingDescriptionId === s.id ? (
+                            <input
+                              autoFocus
+                              className="tdd-description-input"
+                              defaultValue={s.description ?? ""}
+                              placeholder="Add a description"
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={(e) => handleDescriptionChange(s.id, e.target.value)}
+                              onKeyDown={(e) => {
+                                e.stopPropagation();
+                                if (e.key === "Enter") handleDescriptionChange(s.id, e.currentTarget.value);
+                                if (e.key === "Escape") setEditingDescriptionId(null);
+                              }}
+                              aria-label={`Description for ${s.name}`}
+                            />
+                          ) : (
+                            <p
+                              className="tdd-snippet-description"
+                              title="Double-click to edit description"
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                setEditingDescriptionId(s.id);
+                              }}
+                            >
+                              {s.description || "No description"}
+                            </p>
+                          )}
                         </div>
                         <span className="tdd-snippet-meta">{new Date(s.updatedAt).toLocaleDateString()}</span>
                       </div>
@@ -618,6 +672,12 @@ ${exportedBody}
                       icon="file"
                       label="Rename"
                       onClick={() => active && setRenamingId(active.id)}
+                      disabled={!active}
+                    />
+                    <SidebarAction
+                      icon="pencil"
+                      label="Edit description"
+                      onClick={() => active && setEditingDescriptionId(active.id)}
                       disabled={!active}
                     />
                     <SidebarAction icon="trash" label="Delete" variant="danger" onClick={handleDelete} disabled={!active} />
@@ -875,6 +935,23 @@ ${exportedBody}
                           </span>
                         )}
                       </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        id="tdd-request-headers-tab"
+                        className="tdd-selector-tab"
+                        data-state={selectorPanelTab === "headers" ? "active" : undefined}
+                        aria-selected={selectorPanelTab === "headers"}
+                        aria-controls="tdd-request-headers-panel"
+                        onClick={() => setSelectorPanelTab("headers")}
+                      >
+                        Headers
+                        {requestHeaders.some((header) => header.name.trim()) && (
+                          <span className="tdd-tab-count">
+                            {requestHeaders.filter((header) => header.name.trim()).length}
+                          </span>
+                        )}
+                      </button>
                     </div>
                     {selectorPanelTab === "cookies" && (
                       <div
@@ -954,6 +1031,87 @@ ${exportedBody}
                           </div>
                         ) : (
                           <p className="tdd-cookie-empty">No cookies added.</p>
+                        )}
+                      </div>
+                    )}
+                    {selectorPanelTab === "headers" && (
+                      <div
+                        id="tdd-request-headers-panel"
+                        className="tdd-request-options"
+                        role="tabpanel"
+                        aria-labelledby="tdd-request-headers-tab"
+                      >
+                        <div className="tdd-request-options-head">
+                          <div>
+                            <h3 className="tdd-request-options-title">Request headers</h3>
+                            <p className="tdd-picker-hint">
+                              Sent with every Playwright page.goto request, including redirects. Use the Cookies tab for Cookie values.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="tdd-button"
+                            onClick={() =>
+                              setRequestHeaders((headers) => [
+                                ...headers,
+                                { id: `header_${Date.now().toString(36)}`, name: "", value: "" },
+                              ])
+                            }
+                          >
+                            <TddIcon name="plus" size={13} /> Add header
+                          </button>
+                        </div>
+                        {requestHeaders.length > 0 ? (
+                          <div className="tdd-cookie-list">
+                            {requestHeaders.map((header) => (
+                              <div className="tdd-cookie-row" key={header.id}>
+                                <input
+                                  className="tdd-input tdd-mono"
+                                  value={header.name}
+                                  onChange={(event) =>
+                                    setRequestHeaders((headers) =>
+                                      headers.map((current) =>
+                                        current.id === header.id
+                                          ? { ...current, name: event.target.value }
+                                          : current
+                                      )
+                                    )
+                                  }
+                                  placeholder="Name"
+                                  aria-label="Header name"
+                                />
+                                <input
+                                  className="tdd-input tdd-mono"
+                                  value={header.value}
+                                  onChange={(event) =>
+                                    setRequestHeaders((headers) =>
+                                      headers.map((current) =>
+                                        current.id === header.id
+                                          ? { ...current, value: event.target.value }
+                                          : current
+                                      )
+                                    )
+                                  }
+                                  placeholder="Value"
+                                  aria-label={`Value for header ${header.name || "new header"}`}
+                                />
+                                <button
+                                  type="button"
+                                  className="tdd-cookie-remove"
+                                  onClick={() =>
+                                    setRequestHeaders((headers) =>
+                                      headers.filter((current) => current.id !== header.id)
+                                    )
+                                  }
+                                  aria-label={`Remove header ${header.name || "row"}`}
+                                >
+                                  <TddIcon name="close" size={13} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="tdd-cookie-empty">No headers added.</p>
                         )}
                       </div>
                     )}

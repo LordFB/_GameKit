@@ -76,6 +76,12 @@ const P: Record<string, React.ReactNode> = {
       <path d="M4 16V6a2 2 0 0 1 2-2h10" />
     </>
   ),
+  pencil: (
+    <>
+      <path d="m4 20 4.2-1L19 8.2a2.8 2.8 0 0 0-4-4L4.2 15z" />
+      <path d="m13.5 5.8 4.7 4.7" />
+    </>
+  ),
 };
 
 export type TddIconName = keyof typeof P;

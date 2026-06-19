@@ -14,6 +14,12 @@ export interface RequestCookie {
   value: string;
 }
 
+/** A header to apply to each Playwright document navigation request. */
+export interface RequestHeader {
+  name: string;
+  value: string;
+}
+
 export const BRIDGE_ENDPOINT = "/__tdd/run";
 export const SCREENSHOT_ENDPOINT = "/__tdd/screenshot";
 
@@ -70,13 +76,14 @@ export async function runViaBridge(
   url?: string,
   testIdAttribute?: string,
   recordVideo?: boolean,
-  cookies?: RequestCookie[]
+  cookies?: RequestCookie[],
+  headers?: RequestHeader[]
 ): Promise<RunOutcome> {
   let res: Response;
   try {
     res = await fetchWithTimeout(
       BRIDGE_ENDPOINT,
-      { code, url, testIdAttribute, recordVideo, cookies },
+      { code, url, testIdAttribute, recordVideo, cookies, headers },
       BRIDGE_CLIENT_TIMEOUT_MS
     );
   } catch (err) {

@@ -27,6 +27,7 @@ const RUN_DEADLINE_MS = 45_000;
 let inFlight: Promise<unknown> = Promise.resolve();
 let queued = 0;
 const MAX_QUEUE = 1;
+const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
 function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -49,6 +50,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     testIdAttribute?: unknown;
     recordVideo?: unknown;
     cookies?: unknown;
+    headers?: unknown;
   };
   try {
     body = await request.json();
@@ -90,14 +92,26 @@ export async function POST(request: Request): Promise<NextResponse> {
   const testIdAttribute =
     typeof body.testIdAttribute === "string" ? body.testIdAttribute : undefined;
   const recordVideo = body.recordVideo === true;
-  // Only accept simple name/value cookies. Scope is deliberately fixed to the
-  // same-origin target page below, so the dev bridge cannot set cookies for an
-  // arbitrary host.
+  // Only accept simple name/value cookies. The runner applies these only to
+  // document navigation destinations explicitly requested by the snippet.
   const cookies = Array.isArray(body.cookies)
     ? body.cookies.flatMap((cookie) => {
         if (!cookie || typeof cookie !== "object") return [];
         const { name, value } = cookie as { name?: unknown; value?: unknown };
         return typeof name === "string" && typeof value === "string" && name.trim()
+          ? [{ name: name.trim(), value }]
+          : [];
+      })
+    : [];
+  const headers = Array.isArray(body.headers)
+    ? body.headers.flatMap((header) => {
+        if (!header || typeof header !== "object") return [];
+        const { name, value } = header as { name?: unknown; value?: unknown };
+        // Cookies have their own dedicated control and must be set via the
+        // browser cookie jar rather than a manually composed Cookie header.
+        return typeof name === "string" && typeof value === "string" &&
+          HEADER_NAME.test(name.trim()) && !/[\r\n]/.test(value) &&
+          name.trim().toLowerCase() !== "cookie"
           ? [{ name: name.trim(), value }]
           : [];
       })
@@ -115,6 +129,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           testIdAttribute,
           recordVideo,
           cookies,
+          headers,
         }),
         RUN_DEADLINE_MS,
         `Playwright run exceeded ${RUN_DEADLINE_MS / 1000}s and was aborted.`

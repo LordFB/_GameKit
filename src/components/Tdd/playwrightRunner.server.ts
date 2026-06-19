@@ -70,6 +70,8 @@ export interface BridgeOptions {
   recordVideo?: boolean;
   /** Cookies seeded into the isolated browser context before the first request. */
   cookies?: Array<{ name: string; value: string }>;
+  /** Headers applied to each page.goto document request, including redirects. */
+  headers?: Array<{ name: string; value: string }>;
 }
 
 /** Cap the embedded video so a long run can't blow up the JSON response. */
@@ -147,16 +149,48 @@ export async function runViaPlaywright(
       );
     };
 
-    // Seed the initial navigation, then repeat this just before every snippet
-    // page.goto(). A snippet may intentionally navigate to an external host;
-    // its explicitly configured cookies should accompany that navigation too.
+    // Seed the initial navigation before the first document request.
     await seedCookiesForNavigation(options.startUrl);
     const page = await context.newPage();
-    const originalGoto = page.goto.bind(page);
-    page.goto = (async (url, navigationOptions) => {
-      await seedCookiesForNavigation(url);
-      return originalGoto(url, navigationOptions);
-    }) as typeof page.goto;
+    if (options.cookies?.length || options.headers?.length) {
+      // A redirect can cross to a different host after page.goto() has already
+      // started. Pause every document request long enough to seed cookies for
+      // that specific destination before Chromium sends it. This covers every
+      // redirect hop without adding the configured cookies to images/scripts.
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Fetch.enable", {
+        patterns: [{ urlPattern: "*", resourceType: "Document", requestStage: "Request" }],
+      });
+      cdp.on("Fetch.requestPaused", (request) => {
+        void (async () => {
+          try {
+            await seedCookiesForNavigation(request.request.url);
+          } catch {
+            // Do not leave a document request paused if a malformed URL or
+            // browser-level cookie restriction rejects the seed attempt.
+          } finally {
+            const configuredHeaders = options.headers ?? [];
+            const configuredNames = new Set(
+              configuredHeaders.map((header) => header.name.toLowerCase())
+            );
+            const headers = configuredHeaders.length
+              ? [
+                  ...Object.entries(request.request.headers)
+                    .filter(([name]) => !configuredNames.has(name.toLowerCase()))
+                    .map(([name, value]) => ({ name, value })),
+                  ...configuredHeaders,
+                ]
+              : undefined;
+            await cdp
+              .send("Fetch.continueRequest", {
+                requestId: request.requestId,
+                ...(headers ? { headers } : {}),
+              })
+              .catch(() => {});
+          }
+        })();
+      });
+    }
 
     // Close the context (which flushes any recording) and embed the resulting
     // video. Safe to call once; both exit paths route through here so a compile
