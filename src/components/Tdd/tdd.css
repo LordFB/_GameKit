@@ -1183,6 +1183,115 @@
   padding: var(--tdd-space-3);
 }
 
+.tdd-selector-tools {
+  display: grid;
+  gap: var(--tdd-space-3);
+  margin-top: var(--tdd-space-3);
+  padding-top: var(--tdd-space-3);
+  border-top: 1px solid var(--tdd-border-subtle);
+}
+
+.tdd-selector-tabs {
+  display: flex;
+  gap: var(--tdd-space-1);
+  border-bottom: 1px solid var(--tdd-border-subtle);
+}
+
+.tdd-selector-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--tdd-space-2) var(--tdd-space-2);
+  margin-bottom: -1px;
+  color: var(--tdd-text-muted);
+  font: 700 var(--tdd-text-xs) / 1 var(--tdd-font-sans);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.tdd-selector-tab:hover,
+.tdd-selector-tab[data-state="active"] {
+  color: var(--tdd-text);
+}
+
+.tdd-selector-tab[data-state="active"] {
+  border-bottom-color: var(--tdd-blue);
+}
+
+.tdd-selector-tab:focus-visible,
+.tdd-cookie-remove:focus-visible {
+  outline: none;
+  box-shadow: var(--tdd-glow-blue);
+}
+
+.tdd-tab-count {
+  min-width: 16px;
+  padding: 1px 5px;
+  color: #bfdbfe;
+  font: 700 10px / 1.4 var(--tdd-font-mono);
+  text-align: center;
+  background: var(--tdd-blue-soft);
+  border: 1px solid var(--tdd-blue-border);
+  border-radius: 999px;
+}
+
+.tdd-request-options {
+  display: grid;
+  gap: var(--tdd-space-2);
+}
+
+.tdd-request-options-head {
+  display: flex;
+  gap: var(--tdd-space-2);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.tdd-request-options-title {
+  margin: 0 0 3px;
+  color: var(--tdd-text);
+  font-size: var(--tdd-text-sm);
+}
+
+.tdd-cookie-list {
+  display: grid;
+  gap: var(--tdd-space-2);
+}
+
+.tdd-cookie-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.8fr) minmax(120px, 1.2fr) auto;
+  gap: var(--tdd-space-2);
+  align-items: center;
+}
+
+.tdd-cookie-remove {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: var(--tdd-text-muted);
+  background: transparent;
+  border: 1px solid var(--tdd-border-subtle);
+  border-radius: var(--tdd-radius-sm);
+  cursor: pointer;
+}
+
+.tdd-cookie-remove:hover {
+  color: #fecaca;
+  border-color: var(--tdd-red-border);
+  background: var(--tdd-red-soft);
+}
+
+.tdd-cookie-empty {
+  margin: 0;
+  padding: var(--tdd-space-2) 0 0;
+  color: var(--tdd-text-subtle);
+  font-size: var(--tdd-text-xs);
+}
+
 .tdd-picker-target {
   display: grid;
   width: 72px;

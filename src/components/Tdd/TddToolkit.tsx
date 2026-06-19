@@ -47,6 +47,7 @@ import type { Snippet } from "./storage";
 import { runSnippet, RUNNER_MODES, RUNNER_GLOBALS } from "./testRunner";
 import type { RunOutcome, RunnerMode } from "./testRunner";
 import { captureScreenshotPair, runViaBridge } from "./bridge";
+import type { RequestCookie } from "./bridge";
 import { diffScreenshots } from "./visualDiff";
 import { useSelectorPicker } from "./useSelectorPicker";
 import { MonacoSnippetEditor } from "./monaco/MonacoSnippetEditor";
@@ -78,6 +79,10 @@ export interface TddToolkitProps {
 interface TabState {
   /** Live, possibly-unsaved code keyed by snippet id. */
   [id: string]: string;
+}
+
+interface CookieDraft extends RequestCookie {
+  id: string;
 }
 
 /** Trigger a browser download of in-memory text content. */
@@ -119,6 +124,10 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   const [runnerMode, setRunnerMode] = useState<RunnerMode>("in-page");
   // Page the Playwright bridge drives. Relative paths resolve against the dev origin.
   const [bridgeUrl, setBridgeUrl] = useState("/");
+  const [selectorPanelTab, setSelectorPanelTab] = useState<"cookies">("cookies");
+  // Cookies are intentionally session-only: this is a development console and
+  // persisting auth/session values to localStorage would be surprising.
+  const [requestCookies, setRequestCookies] = useState<CookieDraft[]>([]);
   // Opt-in screen recording of the Playwright session (bridge runner only).
   const [recordVideo, setRecordVideo] = useState(false);
   // Opt-in: let in-page page.goto() load a same-origin route into an iframe.
@@ -238,7 +247,15 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   const runOne = useCallback(
     async (code: string): Promise<RunOutcome> => {
       if (runnerMode === "playwright") {
-        return runViaBridge(code, bridgeUrl, testIdAttribute, recordVideo);
+        return runViaBridge(
+          code,
+          bridgeUrl,
+          testIdAttribute,
+          recordVideo,
+          requestCookies
+            .filter((cookie) => cookie.name.trim())
+            .map(({ name, value }) => ({ name: name.trim(), value }))
+        );
       }
       // In-page snippets use the same target as the Playwright bridge: the live
       // page DOM. This keeps Playwright-style locator snippets portable between
@@ -247,9 +264,19 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
       return runSnippet(code, document.body, {
         testIdAttribute,
         enableNavigation: iframeNavigation,
+        cookies: requestCookies
+          .filter((cookie) => cookie.name.trim())
+          .map(({ name, value }) => ({ name: name.trim(), value })),
       });
     },
-    [runnerMode, bridgeUrl, testIdAttribute, recordVideo, iframeNavigation]
+    [
+      runnerMode,
+      bridgeUrl,
+      testIdAttribute,
+      recordVideo,
+      requestCookies,
+      iframeNavigation,
+    ]
   );
 
   const handleRun = useCallback(async () => {
@@ -829,6 +856,108 @@ ${exportedBody}
                       </div>
                     </div>
                   )}
+                  <div className="tdd-selector-tools">
+                    <div className="tdd-selector-tabs" role="tablist" aria-label="Request options">
+                      <button
+                        type="button"
+                        role="tab"
+                        id="tdd-request-cookies-tab"
+                        className="tdd-selector-tab"
+                        data-state={selectorPanelTab === "cookies" ? "active" : undefined}
+                        aria-selected={selectorPanelTab === "cookies"}
+                        aria-controls="tdd-request-cookies-panel"
+                        onClick={() => setSelectorPanelTab("cookies")}
+                      >
+                        Cookies
+                        {requestCookies.some((cookie) => cookie.name.trim()) && (
+                          <span className="tdd-tab-count">
+                            {requestCookies.filter((cookie) => cookie.name.trim()).length}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                    {selectorPanelTab === "cookies" && (
+                      <div
+                        id="tdd-request-cookies-panel"
+                        className="tdd-request-options"
+                        role="tabpanel"
+                        aria-labelledby="tdd-request-cookies-tab"
+                      >
+                        <div className="tdd-request-options-head">
+                          <div>
+                            <h3 className="tdd-request-options-title">Request cookies</h3>
+                            <p className="tdd-picker-hint">
+                              Sent with Playwright page.goto requests, including external URLs. In-page navigation is same-origin only. Kept only for this session.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="tdd-button"
+                            onClick={() =>
+                              setRequestCookies((cookies) => [
+                                ...cookies,
+                                { id: `cookie_${Date.now().toString(36)}`, name: "", value: "" },
+                              ])
+                            }
+                          >
+                            <TddIcon name="plus" size={13} /> Add cookie
+                          </button>
+                        </div>
+                        {requestCookies.length > 0 ? (
+                          <div className="tdd-cookie-list">
+                            {requestCookies.map((cookie) => (
+                              <div className="tdd-cookie-row" key={cookie.id}>
+                                <input
+                                  className="tdd-input tdd-mono"
+                                  value={cookie.name}
+                                  onChange={(event) =>
+                                    setRequestCookies((cookies) =>
+                                      cookies.map((current) =>
+                                        current.id === cookie.id
+                                          ? { ...current, name: event.target.value }
+                                          : current
+                                      )
+                                    )
+                                  }
+                                  placeholder="Name"
+                                  aria-label="Cookie name"
+                                />
+                                <input
+                                  className="tdd-input tdd-mono"
+                                  value={cookie.value}
+                                  onChange={(event) =>
+                                    setRequestCookies((cookies) =>
+                                      cookies.map((current) =>
+                                        current.id === cookie.id
+                                          ? { ...current, value: event.target.value }
+                                          : current
+                                      )
+                                    )
+                                  }
+                                  placeholder="Value"
+                                  aria-label={`Value for cookie ${cookie.name || "new cookie"}`}
+                                />
+                                <button
+                                  type="button"
+                                  className="tdd-cookie-remove"
+                                  onClick={() =>
+                                    setRequestCookies((cookies) =>
+                                      cookies.filter((current) => current.id !== cookie.id)
+                                    )
+                                  }
+                                  aria-label={`Remove cookie ${cookie.name || "row"}`}
+                                >
+                                  <TddIcon name="close" size={13} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="tdd-cookie-empty">No cookies added.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </section>
 
                 {/* Runner mode */}

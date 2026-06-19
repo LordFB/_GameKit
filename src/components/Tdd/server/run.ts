@@ -43,7 +43,13 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  let body: { code?: unknown; url?: unknown; testIdAttribute?: unknown; recordVideo?: unknown };
+  let body: {
+    code?: unknown;
+    url?: unknown;
+    testIdAttribute?: unknown;
+    recordVideo?: unknown;
+    cookies?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -84,6 +90,18 @@ export async function POST(request: Request): Promise<NextResponse> {
   const testIdAttribute =
     typeof body.testIdAttribute === "string" ? body.testIdAttribute : undefined;
   const recordVideo = body.recordVideo === true;
+  // Only accept simple name/value cookies. Scope is deliberately fixed to the
+  // same-origin target page below, so the dev bridge cannot set cookies for an
+  // arbitrary host.
+  const cookies = Array.isArray(body.cookies)
+    ? body.cookies.flatMap((cookie) => {
+        if (!cookie || typeof cookie !== "object") return [];
+        const { name, value } = cookie as { name?: unknown; value?: unknown };
+        return typeof name === "string" && typeof value === "string" && name.trim()
+          ? [{ name: name.trim(), value }]
+          : [];
+      })
+    : [];
 
   // Chain onto the in-flight run so only one Chromium is alive at a time.
   queued += 1;
@@ -91,7 +109,13 @@ export async function POST(request: Request): Promise<NextResponse> {
     .catch(() => {})
     .then(() =>
       withTimeout(
-        runViaPlaywright(code, { baseUrl: origin, startUrl, testIdAttribute, recordVideo }),
+        runViaPlaywright(code, {
+          baseUrl: origin,
+          startUrl,
+          testIdAttribute,
+          recordVideo,
+          cookies,
+        }),
         RUN_DEADLINE_MS,
         `Playwright run exceeded ${RUN_DEADLINE_MS / 1000}s and was aborted.`
       )

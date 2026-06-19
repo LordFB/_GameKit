@@ -62,6 +62,8 @@ export interface RunOutcome {
 
 export interface RunnerOptions {
   testIdAttribute?: string;
+  /** Cookies applied for same-origin iframe requests made by page.goto(). */
+  cookies?: Array<{ name: string; value: string }>;
   /**
    * Let page.goto("/route") load a SAME-ORIGIN route into an offscreen iframe so
    * the in-page runner queries/clicks/screenshots that navigated page. Default
@@ -69,6 +71,45 @@ export interface RunnerOptions {
    * URLs are rejected with a "use the Playwright bridge" message.
    */
   enableNavigation?: boolean;
+}
+
+const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+/**
+ * The in-page runner navigates with a hidden iframe, not a Playwright browser
+ * context. Seed its same-origin request cookies in the document cookie jar and
+ * restore the visible root-path values after the run finishes.
+ */
+function seedInPageCookies(cookies: RunnerOptions["cookies"]): () => void {
+  if (!cookies?.length || typeof document === "undefined") return () => {};
+
+  const valid = cookies.filter(
+    (cookie) =>
+      COOKIE_NAME.test(cookie.name) &&
+      !/[;\r\n]/.test(cookie.value)
+  );
+  const existing = new Map(
+    document.cookie
+      .split(/;\s*/)
+      .filter(Boolean)
+      .map((entry) => {
+        const equalsAt = entry.indexOf("=");
+        return equalsAt < 0 ? [entry, ""] : [entry.slice(0, equalsAt), entry.slice(equalsAt + 1)];
+      })
+  );
+
+  for (const cookie of valid) {
+    document.cookie = `${cookie.name}=${cookie.value}; Path=/; SameSite=Lax`;
+  }
+
+  return () => {
+    for (const cookie of valid) {
+      const previous = existing.get(cookie.name);
+      document.cookie = previous === undefined
+        ? `${cookie.name}=; Path=/; Max-Age=0; SameSite=Lax`
+        : `${cookie.name}=${previous}; Path=/; SameSite=Lax`;
+    }
+  };
 }
 
 export const RUNNER_MODES: Array<{
@@ -735,6 +776,7 @@ export async function runSnippet(
   }
 
   const results: AssertionResult[] = [];
+  const restoreCookies = seedInPageCookies(options.cookies);
   try {
     // Execute the snippet body (registers tests / runs bare asserts). pendingSink
     // collects un-awaited web-first assertions; screenshotSink collects captures.
@@ -794,6 +836,7 @@ export async function runSnippet(
     }
   } finally {
     iframe?.destroy();
+    restoreCookies();
   }
 
   const passed = results.filter((r) => r.status === "passed").length;

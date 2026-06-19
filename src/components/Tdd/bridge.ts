@@ -8,6 +8,12 @@
 
 import type { RunOutcome } from "./testRunner";
 
+/** A cookie to seed into the isolated Playwright browser context for a run. */
+export interface RequestCookie {
+  name: string;
+  value: string;
+}
+
 export const BRIDGE_ENDPOINT = "/__tdd/run";
 export const SCREENSHOT_ENDPOINT = "/__tdd/screenshot";
 
@@ -63,13 +69,14 @@ export async function runViaBridge(
   code: string,
   url?: string,
   testIdAttribute?: string,
-  recordVideo?: boolean
+  recordVideo?: boolean,
+  cookies?: RequestCookie[]
 ): Promise<RunOutcome> {
   let res: Response;
   try {
     res = await fetchWithTimeout(
       BRIDGE_ENDPOINT,
-      { code, url, testIdAttribute, recordVideo },
+      { code, url, testIdAttribute, recordVideo, cookies },
       BRIDGE_CLIENT_TIMEOUT_MS
     );
   } catch (err) {

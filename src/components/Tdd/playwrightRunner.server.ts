@@ -68,6 +68,8 @@ export interface BridgeOptions {
   testIdAttribute?: string;
   /** Record the whole session to a video and attach it to the outcome. */
   recordVideo?: boolean;
+  /** Cookies seeded into the isolated browser context before the first request. */
+  cookies?: Array<{ name: string; value: string }>;
 }
 
 /** Cap the embedded video so a long run can't blow up the JSON response. */
@@ -129,7 +131,32 @@ export async function runViaPlaywright(
       baseURL: options.baseUrl,
       ...(videoDir ? { recordVideo: { dir: videoDir } } : {}),
     });
+    const seedCookiesForNavigation = async (url: string) => {
+      if (!options.cookies?.length) return;
+      const target = new URL(url, options.baseUrl);
+      // Cookie APIs only support network origins. Navigation to data:, file:,
+      // or other non-web protocols is left untouched.
+      if (target.protocol !== "http:" && target.protocol !== "https:") return;
+      await context.addCookies(
+        options.cookies.map((cookie) => ({
+          ...cookie,
+          domain: target.hostname,
+          path: "/",
+          secure: target.protocol === "https:",
+        }))
+      );
+    };
+
+    // Seed the initial navigation, then repeat this just before every snippet
+    // page.goto(). A snippet may intentionally navigate to an external host;
+    // its explicitly configured cookies should accompany that navigation too.
+    await seedCookiesForNavigation(options.startUrl);
     const page = await context.newPage();
+    const originalGoto = page.goto.bind(page);
+    page.goto = (async (url, navigationOptions) => {
+      await seedCookiesForNavigation(url);
+      return originalGoto(url, navigationOptions);
+    }) as typeof page.goto;
 
     // Close the context (which flushes any recording) and embed the resulting
     // video. Safe to call once; both exit paths route through here so a compile
