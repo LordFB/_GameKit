@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useRef, useState } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { cx } from "@/lib/cx";
 import styles from "./Menu.module.css";
 
@@ -34,6 +34,30 @@ export function DropdownMenu({
 }: DropdownMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const toggle = () => setOpen((o) => !o);
+
+  const isButtonTrigger =
+    isValidElement(trigger) &&
+    typeof trigger.type === "object" &&
+    (trigger.type as { render?: { name?: string } }).render?.name === "Button";
+
+  const renderedTrigger = isButtonTrigger
+    ? cloneElement(trigger as ReactElement<Record<string, unknown>>, {
+        onClick: toggle,
+        "aria-haspopup": "menu",
+        "aria-expanded": open,
+      })
+    : (
+      <button
+        type="button"
+        className={styles.triggerButton}
+        onClick={toggle}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        {trigger}
+      </button>
+    );
 
   useEffect(() => {
     if (!open) return;
@@ -53,15 +77,7 @@ export function DropdownMenu({
 
   return (
     <div className={styles.root} ref={rootRef}>
-      <button
-        type="button"
-        className={styles.triggerButton}
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        {trigger}
-      </button>
+      {renderedTrigger}
       {open && (
         <div className={cx(styles.menu, styles[align])} role="menu">
           {sections.map((section, si) => (

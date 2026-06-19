@@ -37,6 +37,9 @@ export default function Home() {
               </div>
             </div>
             <div className={styles.mastheadActions}>
+              <a className={styles.mastheadLink} href="/game-ui">
+                Full game UI
+              </a>
               <ThemeToggle />
             </div>
           </header>

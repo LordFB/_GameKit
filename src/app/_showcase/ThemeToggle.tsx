@@ -43,6 +43,7 @@ export function ThemeToggle() {
       variant="secondary"
       iconOnly
       onClick={toggle}
+      data-test="theme-toggle"
       aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
     >
       <Icon name={theme === "light" ? "moon" : "sun"} size={18} />
