@@ -221,25 +221,33 @@ export function ScreenshotGalleryModal({
         </div>
 
         <div className="tdd-shot-stage">
-          <button
-            type="button"
-            className="tdd-shot-nav"
-            onClick={() => move(-1)}
-            disabled={gallery.index === 0}
-            aria-label="Previous screenshot"
-          >
-            {"<"}
-          </button>
-          <img src={active.dataUrl} alt={active.name} />
-          <button
-            type="button"
-            className="tdd-shot-nav"
-            onClick={() => move(1)}
-            disabled={gallery.index === lastIndex}
-            aria-label="Next screenshot"
-          >
-            {">"}
-          </button>
+          <div className="tdd-shot-frame">
+            <img src={active.dataUrl} alt={active.name} />
+          </div>
+          {gallery.screenshots.length > 1 && (
+            <>
+              <button
+                type="button"
+                className="tdd-shot-nav"
+                data-side="prev"
+                onClick={() => move(-1)}
+                disabled={gallery.index === 0}
+                aria-label="Previous screenshot"
+              >
+                <TddIcon name="chevron-left" size={20} />
+              </button>
+              <button
+                type="button"
+                className="tdd-shot-nav"
+                data-side="next"
+                onClick={() => move(1)}
+                disabled={gallery.index === lastIndex}
+                aria-label="Next screenshot"
+              >
+                <TddIcon name="chevron-right" size={20} />
+              </button>
+            </>
+          )}
         </div>
 
         <div className="tdd-shot-footer">

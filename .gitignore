@@ -33,3 +33,6 @@ screenshots/
 
 # TDD Toolkit file-backed snippets (dev-only "serious mode")
 /.tdd/
+
+# TDD Toolkit vendored Monaco editor (copied from node_modules on postinstall)
+/public/monaco/

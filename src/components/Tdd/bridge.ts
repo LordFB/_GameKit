@@ -62,13 +62,14 @@ function errorOutcome(message: string): RunOutcome {
 export async function runViaBridge(
   code: string,
   url?: string,
-  testIdAttribute?: string
+  testIdAttribute?: string,
+  recordVideo?: boolean
 ): Promise<RunOutcome> {
   let res: Response;
   try {
     res = await fetchWithTimeout(
       BRIDGE_ENDPOINT,
-      { code, url, testIdAttribute },
+      { code, url, testIdAttribute, recordVideo },
       BRIDGE_CLIENT_TIMEOUT_MS
     );
   } catch (err) {

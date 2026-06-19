@@ -8,9 +8,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tdd:monaco": "node src/components/Tdd/scripts/copy-monaco.mjs",
+    "postinstall": "node src/components/Tdd/scripts/copy-monaco.mjs"
   },
   "dependencies": {
+    "monaco-editor": "^0.52.2",
     "next": "^16.2.9",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

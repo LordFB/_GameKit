@@ -31,6 +31,22 @@ export interface AssertionResult {
   screenshots?: ScreenshotAttachment[];
 }
 
+/**
+ * A screen recording of the whole runner session. Only the Playwright bridge
+ * can produce one (the in-page runner has no browser to record); it is attached
+ * to the RunOutcome rather than a single result because Playwright records the
+ * entire context, not per-test.
+ */
+export interface VideoAttachment {
+  id: string;
+  name: string;
+  /** `data:video/webm;base64,…` so the Results panel can <video src> it directly. */
+  dataUrl: string;
+  /** Bytes of the encoded video, for a human-readable size hint. */
+  sizeBytes: number;
+  takenAt: number;
+}
+
 export interface RunOutcome {
   results: AssertionResult[];
   total: number;
@@ -38,6 +54,8 @@ export interface RunOutcome {
   failed: number;
   durationMs: number;
   ranAt: number;
+  /** Present only when video recording was requested on the Playwright bridge. */
+  video?: VideoAttachment;
 }
 
 export interface RunnerOptions {

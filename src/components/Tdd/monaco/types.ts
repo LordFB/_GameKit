@@ -76,5 +76,11 @@ declare global {
       (deps: string[], callback: () => void): void;
     };
     __tddMonacoLoader?: Promise<MonacoApi>;
+    // Monaco reads this to locate its web workers. We set getWorkerUrl so the
+    // workers resolve against whichever base (local /monaco/vs or the CDN) the
+    // loader picked, instead of a relative path the worker context can't resolve.
+    MonacoEnvironment?: {
+      getWorkerUrl?: (moduleId: string, label: string) => string;
+    };
   }
 }

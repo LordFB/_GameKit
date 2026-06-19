@@ -165,9 +165,11 @@
   box-sizing: border-box;
 }
 
+/* Aligns with the toolbar button row: shell padding (space-4) + toolbar
+   padding (space-2) puts its top edge level with the toolbar buttons. */
 .tdd-close {
   position: absolute;
-  top: var(--tdd-space-4);
+  top: calc(var(--tdd-space-4) + var(--tdd-space-2));
   right: var(--tdd-space-4);
   z-index: 2;
 }
@@ -275,13 +277,15 @@
 .tdd-brand {
   display: flex;
   align-items: center;
-  gap: var(--tdd-space-3);
+  gap: var(--tdd-space-2);
+  padding-right: var(--tdd-space-2);
+  border-right: 1px solid var(--tdd-border-subtle);
 }
 
 .tdd-logo {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   color: var(--tdd-text);
   font-weight: 800;
@@ -294,15 +298,10 @@
 .tdd-brand-title {
   margin: 0;
   color: #fff;
-  font-size: var(--tdd-text-xl);
+  font-size: var(--tdd-text-md);
   font-weight: 700;
   letter-spacing: -0.03em;
-}
-
-.tdd-brand-subtitle {
-  margin: 2px 0 0;
-  color: var(--tdd-text-muted);
-  font-size: var(--tdd-text-md);
+  white-space: nowrap;
 }
 
 /* --------------------------------------------------------------------------
@@ -316,6 +315,9 @@
   align-items: center;
   gap: var(--tdd-space-2);
   padding: var(--tdd-space-2);
+  /* Reserve room on the right so toolbar buttons never tuck under the
+     absolutely-positioned close button (36px) sitting outside the toolbar. */
+  padding-right: calc(36px + var(--tdd-space-3));
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent),
     var(--tdd-surface-1);
@@ -1112,6 +1114,67 @@
   white-space: nowrap;
 }
 
+.tdd-session-recording {
+  flex: 0 0 auto;
+  margin-top: var(--tdd-space-2);
+  background: var(--tdd-surface-2);
+  border: 1px solid var(--tdd-border);
+  border-radius: var(--tdd-radius-md);
+  overflow: hidden;
+}
+
+.tdd-session-recording-head {
+  display: flex;
+  align-items: center;
+  gap: var(--tdd-space-2);
+  width: 100%;
+  padding: var(--tdd-space-2) var(--tdd-space-3);
+  color: var(--tdd-text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.tdd-session-recording-head:hover {
+  background: var(--tdd-surface-hover);
+}
+
+.tdd-session-recording-caret {
+  flex: 0 0 auto;
+  color: var(--tdd-text-muted);
+  transition: transform var(--tdd-duration-fast) var(--tdd-ease);
+}
+
+.tdd-session-recording[data-state="expanded"] .tdd-session-recording-caret {
+  transform: rotate(90deg);
+}
+
+.tdd-session-recording-title {
+  font-size: var(--tdd-text-sm);
+  font-weight: 600;
+}
+
+.tdd-session-recording-body {
+  padding: 0 var(--tdd-space-3) var(--tdd-space-3);
+}
+
+.tdd-result-video-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tdd-space-2);
+  align-items: center;
+  margin-bottom: var(--tdd-space-2);
+}
+
+.tdd-session-recording-body video {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--tdd-border);
+  border-radius: var(--tdd-radius-md);
+  background: #020617;
+}
+
 /* --------------------------------------------------------------------------
    12. Selector Picker
    -------------------------------------------------------------------------- */
@@ -1310,16 +1373,52 @@
 .tdd-runner-options {
   display: grid;
   gap: var(--tdd-space-2);
-  padding: var(--tdd-space-3);
+  padding: var(--tdd-space-2);
+}
+
+.tdd-runner-radios,
+.tdd-runner-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--tdd-space-2);
+  align-items: start;
+}
+
+/* A lone input (in-page mode has no Target page field) spans the full row. */
+.tdd-runner-inputs > label:only-child {
+  grid-column: 1 / -1;
+}
+
+.tdd-record-toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--tdd-space-2);
+  align-items: center;
+  padding: var(--tdd-space-2) var(--tdd-space-3);
+  background: var(--tdd-surface-2);
+  border: 1px solid var(--tdd-border-subtle);
+  border-radius: var(--tdd-radius-md);
+  cursor: pointer;
+}
+
+.tdd-record-toggle input {
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.tdd-record-toggle > span {
+  display: grid;
+  gap: 2px;
+  font-size: var(--tdd-text-sm);
 }
 
 .tdd-runner-option {
   display: grid;
-  grid-template-columns: 36px 1fr 18px;
-  gap: var(--tdd-space-3);
+  grid-template-columns: 28px 1fr 18px;
+  gap: var(--tdd-space-2);
   align-items: center;
   width: 100%;
-  padding: var(--tdd-space-3);
+  padding: var(--tdd-space-2) var(--tdd-space-3);
   text-align: left;
   background: var(--tdd-surface-2);
   border: 1px solid var(--tdd-border-subtle);
@@ -1349,8 +1448,8 @@
 
 .tdd-runner-icon {
   display: grid;
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   color: var(--tdd-text);
   background: rgba(255, 255, 255, 0.055);
@@ -1362,15 +1461,9 @@
   align-items: center;
   gap: var(--tdd-space-2);
   margin: 0;
-  font-size: var(--tdd-text-md);
+  font-size: var(--tdd-text-sm);
   font-weight: 700;
-}
-
-.tdd-runner-description {
-  margin: 3px 0 0;
-  color: var(--tdd-text-muted);
-  font-size: var(--tdd-text-xs);
-  line-height: var(--tdd-line-normal);
+  white-space: nowrap;
 }
 
 .tdd-tag {
@@ -1685,36 +1778,64 @@
 .tdd-shot-stage {
   position: relative;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
-  align-items: center;
+  place-items: center;
   min-height: 360px;
-  background: #020617;
+  padding: var(--tdd-space-4);
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(255, 255, 255, 0.04), transparent 60%),
+    var(--tdd-surface-1);
 }
 
-.tdd-shot-stage img {
+.tdd-shot-frame {
+  display: grid;
+  place-items: center;
+  max-width: 100%;
+  padding: var(--tdd-space-2);
+  background: #020617;
+  border: 1px solid var(--tdd-border);
+  border-radius: var(--tdd-radius-lg);
+  box-shadow: var(--tdd-shadow-lg);
+}
+
+.tdd-shot-frame img {
   display: block;
-  width: 100%;
-  height: min(68vh, 640px);
+  max-width: 100%;
+  max-height: min(64vh, 620px);
   object-fit: contain;
+  border-radius: var(--tdd-radius-md);
 }
 
 .tdd-shot-nav {
+  position: absolute;
+  top: 50%;
   display: grid;
-  width: 36px;
-  height: 56px;
+  width: 40px;
+  height: 40px;
   place-items: center;
-  margin: auto;
   color: var(--tdd-text);
-  font-size: 28px;
-  font-weight: 700;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(10, 15, 28, 0.72);
   border: 1px solid var(--tdd-border);
-  border-radius: var(--tdd-radius-md);
+  border-radius: 50%;
+  backdrop-filter: blur(6px);
   cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    background var(--tdd-duration-fast) var(--tdd-ease),
+    border-color var(--tdd-duration-fast) var(--tdd-ease),
+    opacity var(--tdd-duration-fast) var(--tdd-ease);
+}
+
+.tdd-shot-nav[data-side="prev"] {
+  left: var(--tdd-space-3);
+}
+
+.tdd-shot-nav[data-side="next"] {
+  right: var(--tdd-space-3);
 }
 
 .tdd-shot-nav:hover:not(:disabled),
 .tdd-shot-nav:focus-visible {
+  background: rgba(10, 15, 28, 0.92);
   border-color: var(--tdd-blue-border);
   outline: none;
   box-shadow: var(--tdd-glow-blue);
@@ -1722,7 +1843,7 @@
 
 .tdd-shot-nav:disabled {
   cursor: not-allowed;
-  opacity: 0.35;
+  opacity: 0.25;
 }
 
 .tdd-shot-footer {
@@ -1762,76 +1883,21 @@
     grid-template-columns: 1fr;
   }
 
-  .tdd-compare-image,
-  .tdd-shot-stage img {
+  .tdd-compare-image {
     height: 56vh;
   }
 
+  .tdd-shot-frame img {
+    max-height: 56vh;
+  }
+
   .tdd-shot-stage {
-    grid-template-columns: 36px minmax(0, 1fr) 36px;
+    padding: var(--tdd-space-3);
   }
 }
 
 /* --------------------------------------------------------------------------
-   16. Status Bar
-   -------------------------------------------------------------------------- */
-
-.tdd-status-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--tdd-space-3);
-  min-height: 42px;
-  padding: 0 var(--tdd-space-3);
-  color: var(--tdd-text-muted);
-  font-size: var(--tdd-text-sm);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
-    var(--tdd-surface-1);
-  border: 1px solid var(--tdd-border);
-  border-radius: var(--tdd-radius-lg);
-}
-
-.tdd-status-item {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tdd-space-2);
-  white-space: nowrap;
-}
-
-.tdd-status-spacer {
-  flex: 1;
-}
-
-.tdd-status-divider {
-  width: 1px;
-  height: 20px;
-  background: var(--tdd-border-subtle);
-}
-
-.tdd-dot {
-  width: 8px;
-  height: 8px;
-  background: var(--tdd-text-subtle);
-  border-radius: 50%;
-}
-
-.tdd-dot[data-tone="success"] {
-  background: var(--tdd-green);
-  box-shadow: 0 0 12px rgba(34, 197, 94, 0.55);
-}
-
-.tdd-dot[data-tone="danger"] {
-  background: var(--tdd-red);
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.55);
-}
-
-.tdd-dot[data-tone="info"] {
-  background: var(--tdd-blue);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.55);
-}
-
-/* --------------------------------------------------------------------------
-   17. Scrollbars
+   16. Scrollbars
    -------------------------------------------------------------------------- */
 
 .tdd-shell * {
@@ -1926,14 +1992,5 @@
   .tdd-main-grid,
   .tdd-bottom-grid {
     grid-template-columns: 1fr;
-  }
-
-  .tdd-status-bar {
-    flex-wrap: wrap;
-    padding: var(--tdd-space-2);
-  }
-
-  .tdd-status-spacer {
-    display: none;
   }
 }

@@ -18,6 +18,8 @@ export interface RunState {
   expanded: Set<number>;
   /** Result-row indices whose logs are expanded. */
   logExpanded: Set<number>;
+  /** Whether the run-level session recording container is expanded. */
+  videoExpanded: boolean;
 }
 
 export const initialRunState: RunState = {
@@ -25,13 +27,15 @@ export const initialRunState: RunState = {
   running: false,
   expanded: new Set(),
   logExpanded: new Set(),
+  videoExpanded: false,
 };
 
 export type RunAction =
   | { type: "start" }
   | { type: "finish"; outcome: RunOutcome }
   | { type: "toggle-expanded"; index: number }
-  | { type: "toggle-log"; index: number };
+  | { type: "toggle-log"; index: number }
+  | { type: "toggle-video" };
 
 function toggle(set: Set<number>, index: number): Set<number> {
   const next = new Set(set);
@@ -43,12 +47,19 @@ function toggle(set: Set<number>, index: number): Set<number> {
 export function runReducer(state: RunState, action: RunAction): RunState {
   switch (action.type) {
     case "start":
-      return { ...state, running: true, expanded: new Set(), logExpanded: new Set() };
+      return {
+        ...state,
+        running: true,
+        expanded: new Set(),
+        logExpanded: new Set(),
+        videoExpanded: false,
+      };
     case "finish":
       return {
         outcome: action.outcome,
         running: false,
         logExpanded: new Set(),
+        videoExpanded: false,
         // Auto-expand failed rows so the first thing the user sees is the failure.
         expanded: new Set(
           action.outcome.results
@@ -60,6 +71,8 @@ export function runReducer(state: RunState, action: RunAction): RunState {
       return { ...state, expanded: toggle(state.expanded, action.index) };
     case "toggle-log":
       return { ...state, logExpanded: toggle(state.logExpanded, action.index) };
+    case "toggle-video":
+      return { ...state, videoExpanded: !state.videoExpanded };
     default:
       return state;
   }

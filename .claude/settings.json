@@ -4,7 +4,14 @@
       "Bash(ls \"f:/dev/_GameKit/src/app/%5F%5Ftdd/\")",
       "Read(//f/dev/_GameKit/src/app/%5F%5Ftdd//**)",
       "PowerShell(npm run typecheck)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "PowerShell(npm run tdd:monaco 2>&1 | Select-Object -Last 10; Write-Output \"---verify---\"; if \\(Test-Path \"public/monaco/vs/loader.js\"\\) { Write-Output \"OK loader.js present\" } else { Write-Output \"MISSING loader.js\" }; Get-ChildItem \"public/monaco/vs\" -ErrorAction SilentlyContinue | Select-Object -First 8 Name; Write-Output \"---size---\"; \"{0:N1} MB\" -f \\(\\(Get-ChildItem \"public/monaco/vs\" -Recurse -ErrorAction SilentlyContinue | Measure-Object Length -Sum\\).Sum / 1MB\\))",
+      "PowerShell(npm run typecheck 2>&1)",
+      "Bash(rm -rf /tmp/tdd-init-test /tmp/tdd-init-test2; echo cleaned)",
+      "Bash(npm run *)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

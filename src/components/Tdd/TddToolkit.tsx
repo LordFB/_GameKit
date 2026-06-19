@@ -119,6 +119,8 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   const [runnerMode, setRunnerMode] = useState<RunnerMode>("in-page");
   // Page the Playwright bridge drives. Relative paths resolve against the dev origin.
   const [bridgeUrl, setBridgeUrl] = useState("/");
+  // Opt-in screen recording of the Playwright session (bridge runner only).
+  const [recordVideo, setRecordVideo] = useState(false);
   const [screenshotGallery, setScreenshotGallery] = useState<ScreenshotGallery | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -234,14 +236,14 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   const runOne = useCallback(
     async (code: string): Promise<RunOutcome> => {
       if (runnerMode === "playwright") {
-        return runViaBridge(code, bridgeUrl, testIdAttribute);
+        return runViaBridge(code, bridgeUrl, testIdAttribute, recordVideo);
       }
       // In-page snippets use the same target as the Playwright bridge: the live
       // page DOM. This keeps Playwright-style locator snippets portable between
       // both runner modes.
       return runSnippet(code, document.body, { testIdAttribute });
     },
-    [runnerMode, bridgeUrl, testIdAttribute]
+    [runnerMode, bridgeUrl, testIdAttribute, recordVideo]
   );
 
   const handleRun = useCallback(async () => {
@@ -271,15 +273,16 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
     dispatchRun({ type: "start" });
     await new Promise((r) => requestAnimationFrame(r));
     const jobs = snippets.map((s) => ({ id: s.id, name: s.name, code: drafts[s.id] ?? s.code }));
-    // The in-page runner shares a single live DOM, so it must stay serial; the
-    // bridge spins up isolated pages and benefits from running several at once.
-    const concurrency = runnerMode === "playwright" ? 4 : 1;
+    // Both runners must stay serial: the in-page runner shares the single live
+    // DOM, and the Playwright bridge single-flights on the server (each run
+    // launches a fresh Chromium, so it serializes them and rejects overlap with
+    // a 429). Firing several at once just gets all-but-one rejected.
     const merged = await runMany(jobs, runOne, {
-      concurrency,
+      concurrency: 1,
       onProgress: (soFar) => dispatchRun({ type: "finish", outcome: soFar }),
     });
     dispatchRun({ type: "finish", outcome: merged });
-  }, [snippets, drafts, runnerMode, runOne]);
+  }, [snippets, drafts, runOne]);
 
   const handleVisualCompare = useCallback(async () => {
     dispatchVisual({ type: "start" });
@@ -436,19 +439,13 @@ ${exportedBody}
             </button>
 
             <div className="tdd-app">
-              {/* Brand header */}
-              <header className="tdd-brand">
-                <span className="tdd-logo">N</span>
-                <div>
-                  <h1 className="tdd-brand-title">Next.js - TDD Toolkit</h1>
-                  <p className="tdd-brand-subtitle">
-                    Write, run, and export page tests while looking at the page.
-                  </p>
-                </div>
-              </header>
-
-              {/* Toolbar */}
+              {/* Toolbar (with inline brand) */}
               <div className="tdd-toolbar">
+                <header className="tdd-brand">
+                  <span className="tdd-logo">N</span>
+                  <h1 className="tdd-brand-title">Next.js - TDD Toolkit</h1>
+                </header>
+
                 <div className="tdd-toolbar-group">
                   <button
                     type="button"
@@ -731,6 +728,38 @@ ${exportedBody}
                           );
                         })}
                       </div>
+                      {outcome.video && (
+                        <div className="tdd-session-recording" data-state={run.videoExpanded ? "expanded" : undefined}>
+                          <button
+                            type="button"
+                            className="tdd-session-recording-head"
+                            aria-expanded={run.videoExpanded}
+                            onClick={() => dispatchRun({ type: "toggle-video" })}
+                          >
+                            <TddIcon name="chevron-right" size={14} className="tdd-session-recording-caret" />
+                            <TddIcon name="browser" size={13} />
+                            <span className="tdd-session-recording-title">Session recording</span>
+                            <span className="tdd-subtle">
+                              {(outcome.video.sizeBytes / 1024 / 1024).toFixed(1)} MB · whole run
+                            </span>
+                          </button>
+                          {run.videoExpanded && (
+                            <div className="tdd-session-recording-body">
+                              <div className="tdd-result-video-head">
+                                <a
+                                  className="tdd-log-toggle"
+                                  href={outcome.video.dataUrl}
+                                  download={outcome.video.name}
+                                >
+                                  Download {outcome.video.name}
+                                </a>
+                              </div>
+                              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                              <video src={outcome.video.dataUrl} controls />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className="tdd-empty">
@@ -803,52 +832,71 @@ ${exportedBody}
                       Runner / Execution Mode
                     </h2>
                   </div>
-                  <div className="tdd-runner-options" role="radiogroup" aria-label="Runner mode">
-                    {RUNNER_MODES.map((m) => (
-                      <button
-                        type="button"
-                        key={m.id}
-                        className="tdd-runner-option"
-                        role="radio"
-                        aria-checked={runnerMode === m.id}
-                        data-state={runnerMode === m.id ? "selected" : undefined}
-                        onClick={() => m.available && setRunnerMode(m.id)}
-                        disabled={!m.available}
-                      >
-                        <span className="tdd-runner-icon">
-                          <TddIcon name={m.id === "in-page" ? "bolt" : "browser"} size={18} />
-                        </span>
-                        <div>
-                          <p className="tdd-runner-title">
-                            {m.title}
-                            <span className="tdd-tag">{m.tag}</span>
-                          </p>
-                          <p className="tdd-runner-description">{m.description}</p>
-                        </div>
-                        <span className="tdd-radio-dot" />
-                      </button>
-                    ))}
-                    <label style={{ display: "grid", gap: 4 }}>
-                      <span className="tdd-picker-hint">Test ID attribute for getByTestId</span>
-                      <input
-                        className="tdd-input tdd-mono"
-                        value={testIdAttributeDraft}
-                        onChange={(e) => setTestIdAttributeDraft(e.target.value)}
-                        onBlur={() => setTestIdAttributeDraft(testIdAttribute)}
-                        placeholder="data-test"
-                        aria-label="Test ID attribute"
-                      />
-                    </label>
-                    {runnerMode === "playwright" && (
+                  <div className="tdd-runner-options">
+                    <div className="tdd-runner-radios" role="radiogroup" aria-label="Runner mode">
+                      {RUNNER_MODES.map((m) => (
+                        <button
+                          type="button"
+                          key={m.id}
+                          className="tdd-runner-option"
+                          role="radio"
+                          aria-checked={runnerMode === m.id}
+                          data-state={runnerMode === m.id ? "selected" : undefined}
+                          onClick={() => m.available && setRunnerMode(m.id)}
+                          disabled={!m.available}
+                        >
+                          <span className="tdd-runner-icon">
+                            <TddIcon name={m.id === "in-page" ? "bolt" : "browser"} size={15} />
+                          </span>
+                          <div>
+                            <p className="tdd-runner-title">
+                              {m.title}
+                              <span className="tdd-tag">{m.tag}</span>
+                            </p>
+                          </div>
+                          <span className="tdd-radio-dot" />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="tdd-runner-inputs">
                       <label style={{ display: "grid", gap: 4 }}>
-                        <span className="tdd-picker-hint">Target page (relative to the dev server)</span>
+                        <span className="tdd-picker-hint">Test ID attribute for getByTestId</span>
                         <input
                           className="tdd-input tdd-mono"
-                          value={bridgeUrl}
-                          onChange={(e) => setBridgeUrl(e.target.value)}
-                          placeholder="/"
-                          aria-label="Playwright target URL"
+                          value={testIdAttributeDraft}
+                          onChange={(e) => setTestIdAttributeDraft(e.target.value)}
+                          onBlur={() => setTestIdAttributeDraft(testIdAttribute)}
+                          placeholder="data-test"
+                          aria-label="Test ID attribute"
                         />
+                      </label>
+                      {runnerMode === "playwright" && (
+                        <label style={{ display: "grid", gap: 4 }}>
+                          <span className="tdd-picker-hint">Target page (relative to the dev server)</span>
+                          <input
+                            className="tdd-input tdd-mono"
+                            value={bridgeUrl}
+                            onChange={(e) => setBridgeUrl(e.target.value)}
+                            placeholder="/"
+                            aria-label="Playwright target URL"
+                          />
+                        </label>
+                      )}
+                    </div>
+                    {runnerMode === "playwright" && (
+                      <label className="tdd-record-toggle">
+                        <input
+                          type="checkbox"
+                          checked={recordVideo}
+                          onChange={(e) => setRecordVideo(e.target.checked)}
+                          aria-label="Record video of the Playwright session"
+                        />
+                        <span>
+                          Record video of the run
+                          <span className="tdd-picker-hint">
+                            Records the Chromium session as a .webm from the first navigation, attached to the results.
+                          </span>
+                        </span>
                       </label>
                     )}
                   </div>
@@ -942,27 +990,6 @@ ${exportedBody}
                     )}
                   </div>
                 </section>
-              </div>
-
-              {/* Status bar */}
-              <div className="tdd-status-bar">
-                <span className="tdd-status-item">
-                  <span
-                    className="tdd-dot"
-                    data-tone={outcome ? (outcome.failed ? "danger" : "success") : "info"}
-                  />
-                  {outcome ? (outcome.failed ? `${outcome.failed} failing` : "All tests passing") : "Idle"}
-                </span>
-                <span className="tdd-status-divider" />
-                <span className="tdd-status-item">
-                  {runnerMode === "in-page" ? "In-page DOM runner" : "Playwright bridge"}
-                </span>
-                <span className="tdd-status-divider" />
-                <span className="tdd-status-item tdd-mono">getByTestId = [{testIdAttribute}]</span>
-                <span className="tdd-status-divider" />
-                <span className="tdd-status-item tdd-mono">{snippets.length} snippets · localStorage</span>
-                <span className="tdd-status-spacer" />
-                <span className="tdd-status-item tdd-subtle">dev-only · process.env.NODE_ENV = development</span>
               </div>
 
               {visual.modalOpen && visual.result && (

@@ -13,7 +13,15 @@
      await expect(page.getByText("Saved")).toBeVisible()
    ========================================================================== */
 
-import type { AssertionResult, RunOutcome, ScreenshotAttachment } from "./testRunner";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type {
+  AssertionResult,
+  RunOutcome,
+  ScreenshotAttachment,
+  VideoAttachment,
+} from "./testRunner";
 
 // Playwright is a devDependency; import lazily so a production build that never
 // calls this never has to resolve it. `expect` comes from @playwright/test
@@ -58,7 +66,12 @@ export interface BridgeOptions {
   startUrl: string;
   /** Attribute used by page.getByTestId / screen.getByTestId. */
   testIdAttribute?: string;
+  /** Record the whole session to a video and attach it to the outcome. */
+  recordVideo?: boolean;
 }
+
+/** Cap the embedded video so a long run can't blow up the JSON response. */
+const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
 
 function normalizeTestIdAttribute(value?: string): string {
   const attr = value?.trim() || "data-test";
@@ -99,9 +112,50 @@ export async function runViaPlaywright(
   }
 
   const results: AssertionResult[] = [];
+  // Playwright only flushes the video file once the context closes, so we keep a
+  // temp dir alive for the whole run and read+embed (then delete) it at the end.
+  let videoDir: string | null = null;
+  if (options.recordVideo) {
+    try {
+      videoDir = await fs.mkdtemp(path.join(os.tmpdir(), "tdd-video-"));
+    } catch {
+      /* recording is best-effort; carry on without it */
+    }
+  }
+  let video: VideoAttachment | undefined;
+
   try {
-    const context = await browser.newContext({ baseURL: options.baseUrl });
+    const context = await browser.newContext({
+      baseURL: options.baseUrl,
+      ...(videoDir ? { recordVideo: { dir: videoDir } } : {}),
+    });
     const page = await context.newPage();
+
+    // Close the context (which flushes any recording) and embed the resulting
+    // video. Safe to call once; both exit paths route through here so a compile
+    // error still yields whatever was recorded up to that point.
+    const closeAndCaptureVideo = async () => {
+      const recording = page.video();
+      await context.close();
+      if (!videoDir || !recording) return;
+      try {
+        const file = await recording.path();
+        const stat = await fs.stat(file);
+        if (stat.size > 0 && stat.size <= MAX_VIDEO_BYTES) {
+          const buffer = await fs.readFile(file);
+          video = {
+            id: `video_${Date.now().toString(36)}`,
+            name: "session.webm",
+            dataUrl: `data:video/webm;base64,${buffer.toString("base64")}`,
+            sizeBytes: stat.size,
+            takenAt: Date.now(),
+          };
+        }
+      } catch {
+        /* recording is best-effort; a missing/oversized file just omits it */
+      }
+    };
+
     const testIdAttribute = normalizeTestIdAttribute(options.testIdAttribute);
     const getByConfiguredTestId = (id: string) =>
       page.locator(`[${testIdAttribute}="${escapeAttrValue(id)}"]`);
@@ -111,7 +165,19 @@ export async function runViaPlaywright(
     page.on("console", (m) => logs.push(`${m.type()}: ${m.text()}`));
     page.on("pageerror", (e) => logs.push(`pageerror: ${e.message}`));
 
-    await page.goto(options.startUrl, { waitUntil: "domcontentloaded", timeout: TEST_TIMEOUT_MS });
+    const setupGoto = () =>
+      page.goto(options.startUrl, { waitUntil: "domcontentloaded", timeout: TEST_TIMEOUT_MS });
+
+    // The setup navigation to startUrl is scaffolding, not part of the test. When
+    // recording, skip it for snippets that navigate themselves (the common case:
+    // the first line is `page.goto(...)`) so the video starts at the snippet's own
+    // first navigation rather than this boilerplate goto. Snippets that never
+    // navigate have nothing of their own to record, so we still load startUrl up
+    // front — that nav is then the legitimate first frame.
+    const snippetNavigates = /\bpage\s*\.\s*goto\s*\(/.test(code);
+    if (!videoDir || !snippetNavigates) {
+      await setupGoto();
+    }
 
     const registered: RegisteredTest[] = [];
     const test = (name: string, fn: () => Promise<void> | void) => {
@@ -220,7 +286,8 @@ export async function runViaPlaywright(
       compiled = new AsyncFn(...Object.keys(api), `"use strict";\n${code}`) as typeof compiled;
     } catch (err) {
       results.push({ name: "compile", status: "failed", durationMs: 0, error: formatError(err), logs: [] });
-      return finalize(results, ranAt, started);
+      await closeAndCaptureVideo();
+      return finalize(results, ranAt, started, video);
     }
 
     let topLevelError: string | undefined;
@@ -287,10 +354,12 @@ export async function runViaPlaywright(
       }
     }
 
-    await context.close();
-    return finalize(results, ranAt, started);
+    await closeAndCaptureVideo();
+    return finalize(results, ranAt, started, video);
   } finally {
     await browser.close().catch(() => {});
+    // Drop the temp recording now that it's embedded in the response.
+    if (videoDir) await fs.rm(videoDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -310,7 +379,12 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   });
 }
 
-function finalize(results: AssertionResult[], ranAt: number, started: number): RunOutcome {
+function finalize(
+  results: AssertionResult[],
+  ranAt: number,
+  started: number,
+  video?: VideoAttachment
+): RunOutcome {
   const passed = results.filter((r) => r.status === "passed").length;
   return {
     results,
@@ -319,6 +393,7 @@ function finalize(results: AssertionResult[], ranAt: number, started: number): R
     failed: results.length - passed,
     durationMs: Date.now() - started,
     ranAt,
+    ...(video ? { video } : {}),
   };
 }
 
