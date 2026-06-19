@@ -168,8 +168,12 @@ function describe(value: unknown): string {
 }
 
 function isVisible(el: Element | null): boolean {
-  if (!el || !(el instanceof HTMLElement)) return false;
-  if (el.hidden) return false;
+  // Elements inside the in-page navigator iframe belong to its Window realm,
+  // so `el instanceof HTMLElement` against the parent window is false. Use
+  // DOM capabilities instead, which work for both the live page and iframe.
+  if (!el || !("style" in el) || !("hidden" in el)) return false;
+  const htmlEl = el as HTMLElement;
+  if (htmlEl.hidden) return false;
   const style = el.ownerDocument.defaultView?.getComputedStyle(el);
   if (style) {
     if (style.display === "none") return false;
@@ -177,7 +181,7 @@ function isVisible(el: Element | null): boolean {
     if (Number(style.opacity) === 0) return false;
   }
   // offsetParent is null for display:none or fixed-position-in-hidden subtrees.
-  return el.offsetParent !== null || el.getClientRects().length > 0;
+  return htmlEl.offsetParent !== null || el.getClientRects().length > 0;
 }
 
 interface InPageLocator {
@@ -694,6 +698,10 @@ export async function runSnippet(
     if (!iframe) iframe = createIframeSession();
     return iframe;
   };
+  // Access through a typed function at cleanup time: navigation happens inside
+  // an async callback, which TypeScript's local control-flow analysis cannot
+  // see as a mutation of `iframe`.
+  const activeIframe = (): IframeSession | null => iframe;
 
   const screen = makeScreen(getRoot, options);
 
@@ -835,7 +843,7 @@ export async function runSnippet(
       }
     }
   } finally {
-    iframe?.destroy();
+    activeIframe()?.destroy();
     restoreCookies();
   }
 

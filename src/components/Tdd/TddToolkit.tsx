@@ -282,9 +282,12 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
       // page DOM. This keeps Playwright-style locator snippets portable between
       // both runner modes. With navigation enabled, page.goto() loads a
       // same-origin route into an offscreen iframe and queries follow it.
+      // An explicit page.goto() is an unambiguous request to navigate, so it
+      // enables the iframe path even if the optional toggle is off.
+      const snippetNavigates = /\bpage\s*\.\s*goto\s*\(/.test(code);
       return runSnippet(code, document.body, {
         testIdAttribute,
-        enableNavigation: iframeNavigation,
+        enableNavigation: iframeNavigation || snippetNavigates,
         cookies: requestCookies
           .filter((cookie) => cookie.name.trim())
           .map(({ name, value }) => ({ name: name.trim(), value })),
