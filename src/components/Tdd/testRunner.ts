@@ -10,6 +10,8 @@
    playwrightRunner.server.ts); both runners return this same RunOutcome shape.
    ========================================================================== */
 
+import { createIframeSession, type IframeSession } from "./iframeNavigator";
+
 export type RunnerMode = "in-page" | "playwright";
 
 export interface ScreenshotAttachment {
@@ -60,6 +62,13 @@ export interface RunOutcome {
 
 export interface RunnerOptions {
   testIdAttribute?: string;
+  /**
+   * Let page.goto("/route") load a SAME-ORIGIN route into an offscreen iframe so
+   * the in-page runner queries/clicks/screenshots that navigated page. Default
+   * false: goto() is a no-op and the runner tests the live tab. Cross-origin
+   * URLs are rejected with a "use the Playwright bridge" message.
+   */
+  enableNavigation?: boolean;
 }
 
 export const RUNNER_MODES: Array<{
@@ -409,9 +418,12 @@ function escapeAttrValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-function makeScreen(root: ParentNode, options: RunnerOptions = {}) {
+// `getRoot` is a function (not a fixed node) so queries follow the current root
+// after page.goto() swaps it to the navigated iframe's document. See makePage.
+function makeScreen(getRoot: () => ParentNode, options: RunnerOptions = {}) {
   const testIdAttribute = normalizeTestIdAttribute(options.testIdAttribute);
   const byText = (text: string | RegExp): Element[] => {
+    const root = getRoot();
     const out: Element[] = [];
     const walker = (root.ownerDocument ?? document).createTreeWalker(
       root as Node,
@@ -432,7 +444,7 @@ function makeScreen(root: ParentNode, options: RunnerOptions = {}) {
 
   const byRole = (role: string, options?: { name?: string | RegExp }): Element[] => {
     const selector = ROLE_SELECTORS[role] ?? `[role="${role}"]`;
-    let els = Array.from(root.querySelectorAll(selector));
+    let els = Array.from(getRoot().querySelectorAll(selector));
     if (options?.name !== undefined) {
       els = els.filter((el) => nameMatches(accessibleName(el), options.name!));
     }
@@ -440,9 +452,10 @@ function makeScreen(root: ParentNode, options: RunnerOptions = {}) {
   };
 
   const byTestId = (id: string): Element[] =>
-    Array.from(root.querySelectorAll(`[${testIdAttribute}="${escapeAttrValue(id)}"]`));
+    Array.from(getRoot().querySelectorAll(`[${testIdAttribute}="${escapeAttrValue(id)}"]`));
 
   const byLabelText = (text: string | RegExp): Element[] => {
+    const root = getRoot();
     const labels = Array.from(root.querySelectorAll("label")).filter((l) =>
       nameMatches((l.textContent ?? "").trim(), text)
     );
@@ -476,15 +489,27 @@ function makeScreen(root: ParentNode, options: RunnerOptions = {}) {
   };
 }
 
-function makePage(
-  root: ParentNode,
-  options: RunnerOptions = {},
-  notify: (message: string) => void = () => {}
-) {
-  const screen = makeScreen(root, options);
-  const doc = root.ownerDocument ?? document;
+interface PageEnv {
+  /** Current query root — swapped to the iframe document after page.goto(). */
+  getRoot: () => ParentNode;
+  options?: RunnerOptions;
+  /** Per-test log/notice sink (read lazily so per-test swaps are respected). */
+  notify?: (message: string) => void;
+  /** Navigate the in-page iframe; absent → goto is a no-op (live-page mode). */
+  navigate?: (url: string) => Promise<void>;
+  /** Rasterize the navigated page; absent → screenshot is skipped with a notice. */
+  capture?: () => Promise<{ dataUrl: string; width: number; height: number }>;
+  /** Register a captured screenshot so it shows in the result row. */
+  onScreenshot?: (shot: ScreenshotAttachment) => void;
+}
+
+function makePage(env: PageEnv) {
+  const { getRoot, options = {}, notify = () => {}, navigate, capture, onScreenshot } = env;
+  const screen = makeScreen(getRoot, options);
+  const doc = () => getRoot().ownerDocument ?? document;
 
   const queryAll = (selector: string): Element[] => {
+    const root = getRoot();
     const self = root instanceof Element && (root.matches(selector) || selector === "body") ? [root] : [];
     return [...self, ...Array.from(root.querySelectorAll(selector))];
   };
@@ -494,35 +519,56 @@ function makePage(
     return els.filter((el) => nameMatches(el.getAttribute("placeholder") ?? "", text));
   };
 
+  let screenshotCount = 0;
+
   return {
-    goto: async () => {},
+    // With an iframe navigator, page.goto() loads a same-origin route and the
+    // query root follows it. Without one (testing the live tab) it's a no-op.
+    goto: async (url?: string) => {
+      if (navigate && typeof url === "string") await navigate(url);
+    },
     waitForLoadState: async () => {},
-    // The in-page runner can't take real screenshots — that needs the Node
-    // Playwright bridge. Rather than fail the test, emit a notice and return an
-    // empty buffer so the snippet keeps running (and works unchanged under the
-    // bridge, where it captures for real).
-    screenshot: async (): Promise<Uint8Array> => {
-      notify(
-        "ⓘ page.screenshot() was skipped — the in-page runner can't capture screenshots. Switch Runner / Execution Mode to “Playwright bridge” to capture for real."
-      );
+    // Same-origin screenshots are captured from the navigated iframe via canvas.
+    // Live-page mode (no capture) keeps the old "skipped" notice so snippets that
+    // don't navigate still run unchanged.
+    screenshot: async (opts?: { path?: string }): Promise<Uint8Array> => {
+      if (!capture) {
+        notify(
+          "ⓘ page.screenshot() was skipped — capture only works after page.goto() loads a same-origin route. Switch to the Playwright bridge for live-tab or cross-origin captures."
+        );
+        return new Uint8Array();
+      }
+      const { dataUrl, width, height } = await capture();
+      screenshotCount += 1;
+      const path = opts?.path;
+      const name = path ? path.split(/[\\/]/).at(-1) || `screenshot-${screenshotCount}.png` : `screenshot-${screenshotCount}.png`;
+      onScreenshot?.({
+        id: `shot_${Date.now().toString(36)}_${screenshotCount}`,
+        name,
+        path,
+        dataUrl,
+        width,
+        height,
+        takenAt: Date.now(),
+      });
       return new Uint8Array();
     },
-    title: () => doc.title,
-    url: () => doc.location?.href ?? "",
+    title: () => doc().title,
+    url: () => doc().location?.href ?? "",
     locator: (selector: string) =>
-      makeLocator(root, () => queryAll(selector), `page.locator(${JSON.stringify(selector)})`),
+      makeLocator(getRoot(), () => queryAll(selector), `page.locator(${JSON.stringify(selector)})`),
     getByRole: (role: string, options?: { name?: string | RegExp }) =>
-      makeLocator(root, () => screen.getAllByRole(role, options), `page.getByRole(${JSON.stringify(role)})`),
+      makeLocator(getRoot(), () => screen.getAllByRole(role, options), `page.getByRole(${JSON.stringify(role)})`),
     getByText: (text: string | RegExp) =>
-      makeLocator(root, () => screen.getAllByText(text), `page.getByText(${describe(text)})`),
+      makeLocator(getRoot(), () => screen.getAllByText(text), `page.getByText(${describe(text)})`),
     getByTestId: (id: string) =>
-      makeLocator(root, () => screen.getAllByTestId(id), `page.getByTestId(${JSON.stringify(id)})`),
+      makeLocator(getRoot(), () => screen.getAllByTestId(id), `page.getByTestId(${JSON.stringify(id)})`),
     getByLabel: (text: string | RegExp) =>
-      makeLocator(root, () => screen.getAllByLabelText(text), `page.getByLabel(${describe(text)})`),
+      makeLocator(getRoot(), () => screen.getAllByLabelText(text), `page.getByLabel(${describe(text)})`),
     getByLabelText: (text: string | RegExp) =>
-      makeLocator(root, () => screen.getAllByLabelText(text), `page.getByLabelText(${describe(text)})`),
+      makeLocator(getRoot(), () => screen.getAllByLabelText(text), `page.getByLabelText(${describe(text)})`),
     getByPlaceholder: (text: string | RegExp) =>
-      makeLocator(root, () => byPlaceholder(text), `page.getByPlaceholder(${describe(text)})`),
+      makeLocator(getRoot(), () => byPlaceholder(text), `page.getByPlaceholder(${describe(text)})`),
   };
 }
 
@@ -596,10 +642,24 @@ export async function runSnippet(
   const test = (name: string, fn: () => void | Promise<void>) => {
     registered.push({ name, fn });
   };
-  const screen = makeScreen(root, options);
+
+  // Query root starts at the live page and swaps to the navigated iframe document
+  // once page.goto() loads a same-origin route. Created lazily so snippets that
+  // never navigate don't pay for an iframe.
+  let currentRoot: ParentNode = root;
+  const getRoot = () => currentRoot;
+  let iframe: IframeSession | null = null;
+  const ensureIframe = (): IframeSession => {
+    if (!iframe) iframe = createIframeSession();
+    return iframe;
+  };
+
+  const screen = makeScreen(getRoot, options);
 
   // Per-test log capture is swapped in around each run; top-level logs land here.
   let logSink = topLevelLogs;
+  // Per-test screenshot sink, swapped around each run like logSink.
+  let screenshotSink: ScreenshotAttachment[] = [];
   const capturingConsole = {
     log: (...args: unknown[]) => logSink.push(args.map((a) => (typeof a === "string" ? a : describe(a))).join(" ")),
     info: (...args: unknown[]) => logSink.push(args.map((a) => (typeof a === "string" ? a : describe(a))).join(" ")),
@@ -609,7 +669,22 @@ export async function runSnippet(
   // Notices (e.g. screenshot-skipped) land in the active test's log sink so they
   // show as a "Show logs" notice, not a failure. Reads logSink lazily so it
   // follows the per-test swap.
-  const page = makePage(root, options, (message) => logSink.push(message));
+  const page = makePage({
+    getRoot,
+    options,
+    notify: (message) => logSink.push(message),
+    navigate: options.enableNavigation
+      ? async (url: string) => {
+          const session = ensureIframe();
+          await session.goto(url);
+          currentRoot = session.doc().body;
+        }
+      : undefined,
+    capture: options.enableNavigation
+      ? async () => ensureIframe().screenshot()
+      : undefined,
+    onScreenshot: (shot) => screenshotSink.push(shot),
+  });
 
   const api = {
     expect: (actual: unknown) => makeExpect(actual),
@@ -659,51 +734,66 @@ export async function runSnippet(
     };
   }
 
-  // Execute the snippet body (this is what registers tests / runs bare asserts).
-  // pendingSink collects un-awaited web-first assertions fired in the body.
-  let topLevelError: string | undefined;
-  pendingSink = [];
-  try {
-    const maybe = compiled(...argValues);
-    if (maybe instanceof Promise) await maybe;
-    // A bare snippet may have fired un-awaited assertions in its body; await
-    // them so an un-awaited failure isn't a silent pass.
-    if (registered.length === 0) await drainPending(pendingSink);
-  } catch (err) {
-    topLevelError = formatError(err);
-  }
-
   const results: AssertionResult[] = [];
-
-  // No explicit test() calls: treat the whole snippet as one case. Its success
-  // is simply "did the body throw?".
-  if (registered.length === 0) {
-    results.push({
-      name: "snippet",
-      status: topLevelError ? "failed" : "passed",
-      durationMs: Date.now() - ranAt,
-      error: topLevelError,
-      logs: topLevelLogs.slice(),
-    });
-  } else {
-    if (topLevelError) {
-      results.push({ name: "snippet body", status: "failed", durationMs: 0, error: topLevelError, logs: topLevelLogs.slice() });
+  try {
+    // Execute the snippet body (registers tests / runs bare asserts). pendingSink
+    // collects un-awaited web-first assertions; screenshotSink collects captures.
+    let topLevelError: string | undefined;
+    const bodyScreenshots: ScreenshotAttachment[] = [];
+    screenshotSink = bodyScreenshots;
+    pendingSink = [];
+    try {
+      const maybe = compiled(...argValues);
+      if (maybe instanceof Promise) await maybe;
+      // A bare snippet may have fired un-awaited assertions in its body; await
+      // them so an un-awaited failure isn't a silent pass.
+      if (registered.length === 0) await drainPending(pendingSink);
+    } catch (err) {
+      topLevelError = formatError(err);
     }
-    for (const t of registered) {
-      const caseLogs: string[] = [];
-      logSink = caseLogs;
-      pendingSink = [];
-      const start = performance.now();
-      try {
-        const r = t.fn();
-        if (r instanceof Promise) await withTimeout(r, TEST_TIMEOUT_MS);
-        // Catch any web-first assertions the test body started but didn't await.
-        await withTimeout(drainPending(pendingSink), TEST_TIMEOUT_MS);
-        results.push({ name: t.name, status: "passed", durationMs: performance.now() - start, logs: caseLogs.slice() });
-      } catch (err) {
-        results.push({ name: t.name, status: "failed", durationMs: performance.now() - start, error: formatError(err), logs: caseLogs.slice() });
+
+    // No explicit test() calls: treat the whole snippet as one case. Its success
+    // is simply "did the body throw?".
+    if (registered.length === 0) {
+      results.push({
+        name: "snippet",
+        status: topLevelError ? "failed" : "passed",
+        durationMs: Date.now() - ranAt,
+        error: topLevelError,
+        logs: topLevelLogs.slice(),
+        screenshots: bodyScreenshots.slice(),
+      });
+    } else {
+      if (topLevelError || bodyScreenshots.length > 0) {
+        results.push({
+          name: "snippet body",
+          status: topLevelError ? "failed" : "passed",
+          durationMs: 0,
+          error: topLevelError,
+          logs: topLevelLogs.slice(),
+          screenshots: bodyScreenshots.slice(),
+        });
+      }
+      for (const t of registered) {
+        const caseLogs: string[] = [];
+        const caseScreenshots: ScreenshotAttachment[] = [];
+        logSink = caseLogs;
+        screenshotSink = caseScreenshots;
+        pendingSink = [];
+        const start = performance.now();
+        try {
+          const r = t.fn();
+          if (r instanceof Promise) await withTimeout(r, TEST_TIMEOUT_MS);
+          // Catch any web-first assertions the test body started but didn't await.
+          await withTimeout(drainPending(pendingSink), TEST_TIMEOUT_MS);
+          results.push({ name: t.name, status: "passed", durationMs: performance.now() - start, logs: caseLogs.slice(), screenshots: caseScreenshots.slice() });
+        } catch (err) {
+          results.push({ name: t.name, status: "failed", durationMs: performance.now() - start, error: formatError(err), logs: caseLogs.slice(), screenshots: caseScreenshots.slice() });
+        }
       }
     }
+  } finally {
+    iframe?.destroy();
   }
 
   const passed = results.filter((r) => r.status === "passed").length;

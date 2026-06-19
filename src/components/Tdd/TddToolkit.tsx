@@ -121,6 +121,8 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   const [bridgeUrl, setBridgeUrl] = useState("/");
   // Opt-in screen recording of the Playwright session (bridge runner only).
   const [recordVideo, setRecordVideo] = useState(false);
+  // Opt-in: let in-page page.goto() load a same-origin route into an iframe.
+  const [iframeNavigation, setIframeNavigation] = useState(false);
   const [screenshotGallery, setScreenshotGallery] = useState<ScreenshotGallery | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -240,10 +242,14 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
       }
       // In-page snippets use the same target as the Playwright bridge: the live
       // page DOM. This keeps Playwright-style locator snippets portable between
-      // both runner modes.
-      return runSnippet(code, document.body, { testIdAttribute });
+      // both runner modes. With navigation enabled, page.goto() loads a
+      // same-origin route into an offscreen iframe and queries follow it.
+      return runSnippet(code, document.body, {
+        testIdAttribute,
+        enableNavigation: iframeNavigation,
+      });
     },
-    [runnerMode, bridgeUrl, testIdAttribute, recordVideo]
+    [runnerMode, bridgeUrl, testIdAttribute, recordVideo, iframeNavigation]
   );
 
   const handleRun = useCallback(async () => {
@@ -895,6 +901,22 @@ ${exportedBody}
                           Record video of the run
                           <span className="tdd-picker-hint">
                             Records the Chromium session as a .webm from the first navigation, attached to the results.
+                          </span>
+                        </span>
+                      </label>
+                    )}
+                    {runnerMode === "in-page" && (
+                      <label className="tdd-record-toggle">
+                        <input
+                          type="checkbox"
+                          checked={iframeNavigation}
+                          onChange={(e) => setIframeNavigation(e.target.checked)}
+                          aria-label="Enable in-page navigation via iframe"
+                        />
+                        <span>
+                          Enable page.goto() via iframe
+                          <span className="tdd-picker-hint">
+                            Loads same-origin routes into an offscreen iframe so goto/queries/screenshots work. Cross-origin sites need the Playwright bridge.
                           </span>
                         </span>
                       </label>
