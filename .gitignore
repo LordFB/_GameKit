@@ -30,3 +30,6 @@ next-env.d.ts
 /crop_*.png
 
 screenshots/
+
+# TDD Toolkit file-backed snippets (dev-only "serious mode")
+/.tdd/

@@ -33,6 +33,12 @@ const P: Record<string, React.ReactNode> = {
       <path d="M5 15v4a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-4" />
     </>
   ),
+  import: (
+    <>
+      <path d="M12 15V3M8 11l4 4 4-4" />
+      <path d="M5 15v4a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-4" />
+    </>
+  ),
   close: <path d="M6 6l12 12M18 6 6 18" />,
   check: <path d="m5 12 4 4L19 7" />,
   cross: <path d="M6 6l12 12M18 6 6 18" />,

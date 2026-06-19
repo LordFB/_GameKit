@@ -60,7 +60,14 @@ export async function captureScreenshotPair(options: {
 
     const capture = async (url: string) => {
       const page = await context.newPage();
-      await page.goto(url, { waitUntil: "networkidle", timeout: NAV_TIMEOUT_MS });
+      // Prefer networkidle for a settled screenshot, but many real sites keep a
+      // socket open (analytics, chat) and never reach it — fall back to `load`
+      // so a legitimate reference URL doesn't fail the whole comparison.
+      try {
+        await page.goto(url, { waitUntil: "networkidle", timeout: NAV_TIMEOUT_MS });
+      } catch {
+        await page.goto(url, { waitUntil: "load", timeout: NAV_TIMEOUT_MS });
+      }
       const buffer = await page.screenshot({
         type: "png",
         fullPage: false,

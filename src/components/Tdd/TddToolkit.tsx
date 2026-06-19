@@ -12,6 +12,11 @@
    explicit `enabled` flag is passed). Never ship it enabled to production.
    ========================================================================== */
 
+/* Every <img> here renders a base64 data URL (a captured screenshot / pixel
+   diff). next/image can't optimize data URLs and needs known dimensions, so a
+   plain <img> is correct for this dev-only overlay. */
+/* eslint-disable @next/next/no-img-element */
+
 import {
   useCallback,
   useEffect,
@@ -27,6 +32,10 @@ import {
   saveSnippets,
   loadSettings,
   saveSettings,
+  loadDrafts,
+  saveDrafts,
+  serializeSnippets,
+  parseSnippetImport,
   normalizeTestIdAttribute,
   createSnippet,
   duplicateSnippet,
@@ -230,13 +239,80 @@ function loadPng(src: string): Promise<HTMLImageElement> {
   });
 }
 
+/** Trigger a browser download of in-memory text content. */
+function downloadFile(content: string, filename: string, mime: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Perceptual color distance (0–1), weighted for human luminance sensitivity
+ *  like pixelmatch's YIQ metric. Tolerant of small per-channel noise. */
+function colorDelta(
+  a: Uint8ClampedArray,
+  b: Uint8ClampedArray,
+  i: number
+): number {
+  // Blend over white so alpha differences don't read as huge color jumps.
+  const af = a[i + 3] / 255;
+  const bf = b[i + 3] / 255;
+  const ar = a[i] * af + 255 * (1 - af);
+  const ag = a[i + 1] * af + 255 * (1 - af);
+  const ab = a[i + 2] * af + 255 * (1 - af);
+  const br = b[i] * bf + 255 * (1 - bf);
+  const bg = b[i + 1] * bf + 255 * (1 - bf);
+  const bb = b[i + 2] * bf + 255 * (1 - bf);
+  const y = 0.29889531 * (ar - br) + 0.58662247 * (ag - bg) + 0.11448223 * (ab - bb);
+  const i2 = 0.59597799 * (ar - br) - 0.2741761 * (ag - bg) - 0.32180189 * (ab - bb);
+  const q = 0.21147017 * (ar - br) - 0.52261711 * (ag - bg) + 0.31114694 * (ab - bb);
+  // Normalize to 0–1 (max ~= 35215 for full black↔white).
+  return (0.5053 * y * y + 0.299 * i2 * i2 + 0.1957 * q * q) / 35215;
+}
+
+/** True when a differing pixel is likely anti-aliasing: surrounded by neighbors
+ *  with both higher and lower contrast in the *same* image (an edge), so the
+ *  sub-pixel difference is rendering noise, not a real visual change. */
+function isAntialiased(
+  data: Uint8ClampedArray,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): boolean {
+  let zeroes = 0;
+  const pos = (y * width + x) * 4;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const npos = (ny * width + nx) * 4;
+      const same =
+        data[pos] === data[npos] &&
+        data[pos + 1] === data[npos + 1] &&
+        data[pos + 2] === data[npos + 2];
+      if (same && ++zeroes > 2) return true;
+    }
+  }
+  return false;
+}
+
 async function diffScreenshots(pair: ScreenshotPair): Promise<VisualDiffResult> {
   const [target, reference] = await Promise.all([
     loadPng(pair.targetPng),
     loadPng(pair.referencePng),
   ]);
-  const width = Math.min(target.naturalWidth, reference.naturalWidth);
-  const height = Math.min(target.naturalHeight, reference.naturalHeight);
+  // Normalize to the target's intrinsic size. The reference may decode at a
+  // different device-pixel-ratio or resolution; scaling it onto the target's
+  // grid keeps rows aligned instead of cropping to min() (which misaligned
+  // everything and reported ~100% diff for any size mismatch).
+  const width = target.naturalWidth;
+  const height = target.naturalHeight;
   const targetCanvas = document.createElement("canvas");
   const referenceCanvas = document.createElement("canvas");
   const diffCanvas = document.createElement("canvas");
@@ -251,31 +327,41 @@ async function diffScreenshots(pair: ScreenshotPair): Promise<VisualDiffResult> 
   }
 
   targetCtx.drawImage(target, 0, 0, width, height);
+  // Scale the reference to fit the target's dimensions.
   referenceCtx.drawImage(reference, 0, 0, width, height);
   const targetData = targetCtx.getImageData(0, 0, width, height);
   const referenceData = referenceCtx.getImageData(0, 0, width, height);
   const diffData = diffCtx.createImageData(width, height);
+  const t = targetData.data;
+  const r = referenceData.data;
+  // Matches the visible "X% diff" badge; ~10% perceptual delta reads as changed.
+  const THRESHOLD = 0.1;
   let mismatchPixels = 0;
 
-  for (let i = 0; i < targetData.data.length; i += 4) {
-    const dr = Math.abs(targetData.data[i] - referenceData.data[i]);
-    const dg = Math.abs(targetData.data[i + 1] - referenceData.data[i + 1]);
-    const db = Math.abs(targetData.data[i + 2] - referenceData.data[i + 2]);
-    const changed = dr + dg + db > 48;
-    if (changed) mismatchPixels += 1;
-    if (changed) {
-      diffData.data[i] = 239;
-      diffData.data[i + 1] = 68;
-      diffData.data[i + 2] = 68;
-      diffData.data[i + 3] = 255;
-    } else {
-      const gray = Math.round(
-        (targetData.data[i] + targetData.data[i + 1] + targetData.data[i + 2]) / 3
-      );
-      diffData.data[i] = gray;
-      diffData.data[i + 1] = gray;
-      diffData.data[i + 2] = gray;
-      diffData.data[i + 3] = 80;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const delta = colorDelta(t, r, i);
+      // A pixel only counts as changed if it exceeds the threshold AND is not
+      // anti-aliasing in either image — sub-pixel text edges no longer flood
+      // the diff red.
+      const changed =
+        delta > THRESHOLD &&
+        !isAntialiased(t, x, y, width, height) &&
+        !isAntialiased(r, x, y, width, height);
+      if (changed) {
+        mismatchPixels += 1;
+        diffData.data[i] = 239;
+        diffData.data[i + 1] = 68;
+        diffData.data[i + 2] = 68;
+        diffData.data[i + 3] = 255;
+      } else {
+        const gray = Math.round((t[i] + t[i + 1] + t[i + 2]) / 3);
+        diffData.data[i] = gray;
+        diffData.data[i + 1] = gray;
+        diffData.data[i + 2] = gray;
+        diffData.data[i + 3] = 80;
+      }
     }
   }
 
@@ -313,7 +399,8 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   const testIdAttribute = normalizeTestIdAttribute(testIdAttributeDraft);
   // null means "no explicit selection" → falls back to the first snippet.
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<TabState>({});
+  // Unsaved edits, restored from localStorage so a refresh doesn't lose work.
+  const [drafts, setDrafts] = useState<TabState>(() => loadDrafts());
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [runnerMode, setRunnerMode] = useState<RunnerMode>("in-page");
@@ -332,8 +419,10 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [logExpanded, setLogExpanded] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const editorInsertRef = useRef<((text: string) => boolean) | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const active = useMemo(
     () => snippets.find((s) => s.id === activeId) ?? snippets[0] ?? null,
@@ -358,6 +447,11 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   useEffect(() => {
     saveSettings({ testIdAttribute });
   }, [testIdAttribute]);
+
+  // Persist unsaved drafts so a refresh doesn't discard in-progress edits.
+  useEffect(() => {
+    saveDrafts(drafts);
+  }, [drafts]);
 
   /* ---- snippet CRUD ----------------------------------------------------- */
 
@@ -544,14 +638,44 @@ test.describe("${escapedName}", () => {
 ${exportedBody}
 });
 `;
-    const blob = new Blob([file], { type: "text/typescript" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${active.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.test.ts`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadFile(
+      file,
+      `${active.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.test.ts`,
+      "text/typescript"
+    );
   }, [active, draftCode]);
+
+  /* ---- export all / import (JSON) --------------------------------------- */
+
+  // Save the *current* drafts into a snapshot so exported snippets include
+  // unsaved edits — the dirty dot would otherwise lie about what's exported.
+  const handleExportAll = useCallback(() => {
+    if (snippets.length === 0) return;
+    const withDrafts = snippets.map((s) =>
+      drafts[s.id] !== undefined && drafts[s.id] !== s.code
+        ? { ...s, code: drafts[s.id] }
+        : s
+    );
+    downloadFile(
+      serializeSnippets(withDrafts),
+      `tdd-snippets-${new Date().toISOString().slice(0, 10)}.json`,
+      "application/json"
+    );
+  }, [snippets, drafts]);
+
+  const handleImportFile = useCallback(
+    async (file: File) => {
+      setImportError(null);
+      try {
+        const imported = parseSnippetImport(await file.text());
+        persist([...imported, ...snippets]);
+        setActiveId(imported[0].id);
+      } catch (err) {
+        setImportError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [persist, snippets]
+  );
 
   const copy = useCallback((text: string, key: string) => {
     navigator.clipboard?.writeText(text).then(() => {
@@ -682,8 +806,36 @@ ${exportedBody}
 
                 <div className="tdd-toolbar-group">
                   <ToolbarButton icon="export" label="Export to test file" onClick={handleExport} disabled={!active} />
+                  <ToolbarButton
+                    icon="export"
+                    label="Export all"
+                    onClick={handleExportAll}
+                    disabled={snippets.length === 0}
+                  />
+                  <ToolbarButton
+                    icon="import"
+                    label="Import"
+                    onClick={() => importInputRef.current?.click()}
+                  />
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleImportFile(file);
+                      e.target.value = "";
+                    }}
+                  />
                 </div>
               </div>
+
+              {importError && (
+                <pre className="tdd-error-block" style={{ margin: 0 }}>
+                  Import failed: {importError}
+                </pre>
+              )}
 
               {/* Main grid */}
               <div className="tdd-main-grid">
@@ -1265,10 +1417,15 @@ function MonacoSnippetEditor({
   const onSaveRef = useRef(onSave);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  valueRef.current = value;
-  onChangeRef.current = onChange;
-  onRunRef.current = onRun;
-  onSaveRef.current = onSave;
+  // Keep the latest props in refs for the long-lived Monaco callbacks (which are
+  // wired once on mount). Synced in an effect — not during render — so we never
+  // mutate a ref while rendering.
+  useEffect(() => {
+    valueRef.current = value;
+    onChangeRef.current = onChange;
+    onRunRef.current = onRun;
+    onSaveRef.current = onSave;
+  });
 
   useEffect(() => {
     let cancelled = false;

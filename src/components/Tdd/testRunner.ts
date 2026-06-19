@@ -188,6 +188,19 @@ function makeLocator(root: ParentNode, find: () => Element[], label: string): In
   return locator;
 }
 
+/** Default time a DOM-dependent matcher retries before failing. */
+const ASSERTION_TIMEOUT_MS = 1000;
+const ASSERTION_POLL_MS = 30;
+
+/**
+ * Web-first matchers return a `PendingAssertion`: a Promise the snippet may
+ * `await` (it retries the underlying check until it passes or the deadline
+ * elapses, mirroring Playwright's auto-waiting). The same object is registered
+ * with the active runner so a NON-awaited assertion still fails its test — see
+ * `pushPending` / `drainPending` in runSnippet.
+ */
+type PendingAssertion = Promise<void>;
+
 interface Matchers {
   toBe(expected: unknown): void;
   toEqual(expected: unknown): void;
@@ -196,16 +209,19 @@ interface Matchers {
   toBeNull(): void;
   toBeDefined(): void;
   toContain(substring: string): void;
-  toHaveText(text: string | RegExp): void;
-  toHaveTextContent(text: string | RegExp): void;
-  toHaveAttribute(name: string, value?: string | RegExp): void;
-  toHaveTitle(text: string | RegExp): void;
-  toBeVisible(): void;
-  toBeAttached(): void;
-  toBeInTheDocument(): void;
-  toBeDisabled(): void;
-  toBeChecked(): void;
+  toHaveText(text: string | RegExp): PendingAssertion;
+  toHaveTextContent(text: string | RegExp): PendingAssertion;
+  toHaveAttribute(name: string, value?: string | RegExp): PendingAssertion;
+  toHaveTitle(text: string | RegExp): PendingAssertion;
+  toBeVisible(): PendingAssertion;
+  toBeAttached(): PendingAssertion;
+  toBeInTheDocument(): PendingAssertion;
+  toBeDisabled(): PendingAssertion;
+  toBeChecked(): PendingAssertion;
 }
+
+/** Pending DOM-assertion sink, swapped in by the runner around each test. */
+let pendingSink: PendingAssertion[] = [];
 
 function makeExpect(actual: unknown, negated = false): Matchers & { not: Matchers } {
   const check = (pass: boolean, message: string) => {
@@ -213,9 +229,35 @@ function makeExpect(actual: unknown, negated = false): Matchers & { not: Matcher
       throw new AssertionError(negated ? `Expected NOT: ${message}` : message);
     }
   };
-  const el = actual instanceof Element ? actual : isInPageLocator(actual) ? actual.resolveOne() : null;
   const textMatches = (value: string, expected: string | RegExp) =>
     expected instanceof RegExp ? expected.test(value) : value.includes(expected);
+
+  // Re-resolve the element on each retry: a locator may match something that did
+  // not exist when expect() was first called (the whole point of auto-waiting).
+  const resolveEl = (): Element | null =>
+    actual instanceof Element ? actual : isInPageLocator(actual) ? actual.resolveOne() : null;
+
+  // Run a DOM-dependent matcher, retrying until it passes or the deadline. The
+  // returned promise is also tracked so a non-awaited call still fails the test.
+  const web = (evaluate: (el: Element | null) => void): PendingAssertion => {
+    const deadline = Date.now() + ASSERTION_TIMEOUT_MS;
+    const attempt = async (): Promise<void> => {
+      for (;;) {
+        try {
+          // resolveEl() itself throws when a locator matches 0 / >1 elements;
+          // retrying lets the element appear (or settle to one) before failing.
+          evaluate(resolveEl());
+          return;
+        } catch (err) {
+          if (Date.now() >= deadline) throw err;
+          await new Promise((r) => setTimeout(r, ASSERTION_POLL_MS));
+        }
+      }
+    };
+    const promise = attempt();
+    pendingSink.push(promise);
+    return promise;
+  };
 
   const matchers: Matchers = {
     toBe(expected) {
@@ -249,45 +291,57 @@ function makeExpect(actual: unknown, negated = false): Matchers & { not: Matcher
       check(ok, `expected ${describe(actual)} to contain ${describe(substring)}`);
     },
     toHaveText(text) {
-      const content = el?.textContent ?? "";
-      check(textMatches(content, text), `expected element to have text ${describe(text)}, got ${describe(content.trim())}`);
+      return web((el) => {
+        const content = el?.textContent ?? "";
+        check(textMatches(content, text), `expected element to have text ${describe(text)}, got ${describe(content.trim())}`);
+      });
     },
     toHaveTextContent(text) {
-      const content = el?.textContent ?? "";
-      check(textMatches(content, text), `expected element to have text ${describe(text)}, got ${describe(content.trim())}`);
+      return web((el) => {
+        const content = el?.textContent ?? "";
+        check(textMatches(content, text), `expected element to have text ${describe(text)}, got ${describe(content.trim())}`);
+      });
     },
     toHaveAttribute(name, value) {
-      const has = el?.hasAttribute(name) ?? false;
-      if (value === undefined) {
-        check(has, `expected element to have attribute "${name}"`);
-      } else {
-        const actualValue = el?.getAttribute(name) ?? "";
-        const ok = value instanceof RegExp ? value.test(actualValue) : actualValue === value;
-        check(ok, `expected attribute "${name}" to be ${describe(value)}, got ${describe(actualValue)}`);
-      }
+      return web((el) => {
+        const has = el?.hasAttribute(name) ?? false;
+        if (value === undefined) {
+          check(has, `expected element to have attribute "${name}"`);
+        } else {
+          const actualValue = el?.getAttribute(name) ?? "";
+          const ok = value instanceof RegExp ? value.test(actualValue) : actualValue === value;
+          check(ok, `expected attribute "${name}" to be ${describe(value)}, got ${describe(actualValue)}`);
+        }
+      });
     },
     toHaveTitle(text) {
-      const title = actual && typeof actual === "object" && "title" in actual && typeof actual.title === "function"
-        ? String(actual.title())
-        : "";
-      check(textMatches(title, text), `expected page title to match ${describe(text)}, got ${describe(title)}`);
+      return web(() => {
+        const title = actual && typeof actual === "object" && "title" in actual && typeof actual.title === "function"
+          ? String(actual.title())
+          : "";
+        check(textMatches(title, text), `expected page title to match ${describe(text)}, got ${describe(title)}`);
+      });
     },
     toBeVisible() {
-      check(isVisible(el), `expected ${describe(actual)} to be visible`);
+      return web((el) => check(isVisible(el), `expected ${describe(actual)} to be visible`));
     },
     toBeAttached() {
-      check(Boolean(el && el.ownerDocument.contains(el)), `expected element to be attached`);
+      return web((el) => check(Boolean(el && el.ownerDocument.contains(el)), `expected element to be attached`));
     },
     toBeInTheDocument() {
-      check(Boolean(el && el.ownerDocument.contains(el)), `expected element to be in the document`);
+      return web((el) => check(Boolean(el && el.ownerDocument.contains(el)), `expected element to be in the document`));
     },
     toBeDisabled() {
-      const disabled = el instanceof HTMLButtonElement || el instanceof HTMLInputElement ? el.disabled : el?.getAttribute("aria-disabled") === "true";
-      check(Boolean(disabled), `expected element to be disabled`);
+      return web((el) => {
+        const disabled = el instanceof HTMLButtonElement || el instanceof HTMLInputElement ? el.disabled : el?.getAttribute("aria-disabled") === "true";
+        check(Boolean(disabled), `expected element to be disabled`);
+      });
     },
     toBeChecked() {
-      const checked = el instanceof HTMLInputElement ? el.checked : el?.getAttribute("aria-checked") === "true";
-      check(Boolean(checked), `expected element to be checked`);
+      return web((el) => {
+        const checked = el instanceof HTMLInputElement ? el.checked : el?.getAttribute("aria-checked") === "true";
+        check(Boolean(checked), `expected element to be checked`);
+      });
     },
   };
 
@@ -404,7 +458,11 @@ function makeScreen(root: ParentNode, options: RunnerOptions = {}) {
   };
 }
 
-function makePage(root: ParentNode, options: RunnerOptions = {}) {
+function makePage(
+  root: ParentNode,
+  options: RunnerOptions = {},
+  notify: (message: string) => void = () => {}
+) {
   const screen = makeScreen(root, options);
   const doc = root.ownerDocument ?? document;
 
@@ -421,8 +479,15 @@ function makePage(root: ParentNode, options: RunnerOptions = {}) {
   return {
     goto: async () => {},
     waitForLoadState: async () => {},
-    screenshot: async () => {
-      throw new AssertionError("page.screenshot() requires the Playwright bridge. Switch Runner / Execution Mode to Playwright bridge.");
+    // The in-page runner can't take real screenshots — that needs the Node
+    // Playwright bridge. Rather than fail the test, emit a notice and return an
+    // empty buffer so the snippet keeps running (and works unchanged under the
+    // bridge, where it captures for real).
+    screenshot: async (): Promise<Uint8Array> => {
+      notify(
+        "ⓘ page.screenshot() was skipped — the in-page runner can't capture screenshots. Switch Runner / Execution Mode to “Playwright bridge” to capture for real."
+      );
+      return new Uint8Array();
     },
     title: () => doc.title,
     url: () => doc.location?.href ?? "",
@@ -470,6 +535,22 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+/**
+ * Await every web-first assertion started since the sink was reset, throwing
+ * the first failure. This catches NON-awaited assertions (the in-page sync
+ * style: `expect(el).toBeVisible()`) so an un-awaited failure is never a silent
+ * false positive — matching the Playwright bridge's drainPending().
+ */
+async function drainPending(batch: PendingAssertion[]): Promise<void> {
+  const settled = await Promise.allSettled(batch);
+  const firstReject = settled.find((s) => s.status === "rejected");
+  if (firstReject && firstReject.status === "rejected") {
+    throw firstReject.reason instanceof Error
+      ? firstReject.reason
+      : new Error(String(firstReject.reason));
+  }
+}
+
 function formatError(err: unknown): string {
   if (err instanceof AssertionError) return err.message;
   if (err instanceof Error) {
@@ -498,7 +579,6 @@ export async function runSnippet(
     registered.push({ name, fn });
   };
   const screen = makeScreen(root, options);
-  const page = makePage(root, options);
 
   // Per-test log capture is swapped in around each run; top-level logs land here.
   let logSink = topLevelLogs;
@@ -508,6 +588,10 @@ export async function runSnippet(
     warn: (...args: unknown[]) => logSink.push("⚠ " + args.map((a) => (typeof a === "string" ? a : describe(a))).join(" ")),
     error: (...args: unknown[]) => logSink.push("✖ " + args.map((a) => (typeof a === "string" ? a : describe(a))).join(" ")),
   };
+  // Notices (e.g. screenshot-skipped) land in the active test's log sink so they
+  // show as a "Show logs" notice, not a failure. Reads logSink lazily so it
+  // follows the per-test swap.
+  const page = makePage(root, options, (message) => logSink.push(message));
 
   const api = {
     expect: (actual: unknown) => makeExpect(actual),
@@ -558,10 +642,15 @@ export async function runSnippet(
   }
 
   // Execute the snippet body (this is what registers tests / runs bare asserts).
+  // pendingSink collects un-awaited web-first assertions fired in the body.
   let topLevelError: string | undefined;
+  pendingSink = [];
   try {
     const maybe = compiled(...argValues);
     if (maybe instanceof Promise) await maybe;
+    // A bare snippet may have fired un-awaited assertions in its body; await
+    // them so an un-awaited failure isn't a silent pass.
+    if (registered.length === 0) await drainPending(pendingSink);
   } catch (err) {
     topLevelError = formatError(err);
   }
@@ -585,10 +674,13 @@ export async function runSnippet(
     for (const t of registered) {
       const caseLogs: string[] = [];
       logSink = caseLogs;
+      pendingSink = [];
       const start = performance.now();
       try {
         const r = t.fn();
         if (r instanceof Promise) await withTimeout(r, TEST_TIMEOUT_MS);
+        // Catch any web-first assertions the test body started but didn't await.
+        await withTimeout(drainPending(pendingSink), TEST_TIMEOUT_MS);
         results.push({ name: t.name, status: "passed", durationMs: performance.now() - start, logs: caseLogs.slice() });
       } catch (err) {
         results.push({ name: t.name, status: "failed", durationMs: performance.now() - start, error: formatError(err), logs: caseLogs.slice() });

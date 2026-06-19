@@ -11,6 +11,31 @@ import type { RunOutcome } from "./testRunner";
 export const BRIDGE_ENDPOINT = "/__tdd/run";
 export const SCREENSHOT_ENDPOINT = "/__tdd/screenshot";
 
+/** Client-side ceiling: abort a run/capture that the server never finishes so
+ *  the UI spinner can't hang indefinitely. Comfortably above the server's own
+ *  launch + nav + test timeouts. */
+const BRIDGE_CLIENT_TIMEOUT_MS = 60_000;
+
+/** fetch() with a wall-clock abort. Returns the Response or throws AbortError. */
+async function fetchWithTimeout(
+  endpoint: string,
+  body: unknown,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface ScreenshotPair {
   targetUrl: string;
   referenceUrl: string;
@@ -41,12 +66,17 @@ export async function runViaBridge(
 ): Promise<RunOutcome> {
   let res: Response;
   try {
-    res = await fetch(BRIDGE_ENDPOINT, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code, url, testIdAttribute }),
-    });
+    res = await fetchWithTimeout(
+      BRIDGE_ENDPOINT,
+      { code, url, testIdAttribute },
+      BRIDGE_CLIENT_TIMEOUT_MS
+    );
   } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return errorOutcome(
+        `The Playwright bridge did not respond within ${BRIDGE_CLIENT_TIMEOUT_MS / 1000}s and the run was aborted. The dev server may be busy or the page never loaded.`
+      );
+    }
     return errorOutcome(
       `Could not reach the Playwright bridge at ${BRIDGE_ENDPOINT}. Is the dev server running?\n${
         err instanceof Error ? err.message : String(err)
@@ -83,12 +113,17 @@ export async function captureScreenshotPair(
 ): Promise<ScreenshotPair> {
   let res: Response;
   try {
-    res = await fetch(SCREENSHOT_ENDPOINT, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ targetUrl, referenceUrl }),
-    });
+    res = await fetchWithTimeout(
+      SCREENSHOT_ENDPOINT,
+      { targetUrl, referenceUrl },
+      BRIDGE_CLIENT_TIMEOUT_MS
+    );
   } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(
+        `The screenshot bridge did not respond within ${BRIDGE_CLIENT_TIMEOUT_MS / 1000}s and the capture was aborted.`
+      );
+    }
     throw new Error(
       `Could not reach the screenshot bridge at ${SCREENSHOT_ENDPOINT}. Is the dev server running?\n${
         err instanceof Error ? err.message : String(err)

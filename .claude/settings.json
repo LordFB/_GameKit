@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"f:/dev/_GameKit/src/app/%5F%5Ftdd/\")",
+      "Read(//f/dev/_GameKit/src/app/%5F%5Ftdd//**)",
+      "PowerShell(npm run typecheck)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

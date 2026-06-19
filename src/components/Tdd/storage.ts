@@ -21,6 +21,7 @@ export interface Snippet {
 
 const KEY = "next-tdd-snippets";
 const SETTINGS_KEY = "next-tdd-settings";
+const DRAFTS_KEY = "next-tdd-drafts";
 
 export interface TddSettings {
   testIdAttribute: string;
@@ -231,4 +232,101 @@ export function duplicateSnippet(source: Snippet): Snippet {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/* ---- draft persistence -------------------------------------------------- */
+/* Unsaved per-snippet edits survive a refresh. Keyed by snippet id; entries
+   equal to the saved code are pruned on save so the store doesn't grow stale. */
+
+export type Drafts = Record<string, string>;
+
+export function loadDrafts(): Drafts {
+  const store = available();
+  if (!store) return {};
+  const raw = store.getItem(DRAFTS_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const out: Drafts = {};
+      for (const [id, code] of Object.entries(parsed)) {
+        if (typeof code === "string") out[id] = code;
+      }
+      return out;
+    }
+  } catch {
+    /* ignore corrupt drafts */
+  }
+  return {};
+}
+
+export function saveDrafts(drafts: Drafts): void {
+  const store = available();
+  if (!store) return;
+  try {
+    store.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+  } catch {
+    // quota or serialization failure — keep working from memory this session
+  }
+}
+
+/* ---- export / import ---------------------------------------------------- */
+
+export interface SnippetExport {
+  format: "next-tdd-snippets";
+  version: 1;
+  exportedAt: number;
+  snippets: Snippet[];
+}
+
+export function serializeSnippets(snippets: Snippet[]): string {
+  const payload: SnippetExport = {
+    format: "next-tdd-snippets",
+    version: 1,
+    exportedAt: Date.now(),
+    snippets,
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+function isSnippetLike(s: unknown): s is Snippet {
+  return Boolean(
+    s &&
+      typeof s === "object" &&
+      typeof (s as Snippet).name === "string" &&
+      typeof (s as Snippet).code === "string"
+  );
+}
+
+/**
+ * Parse an exported snippet file (or a bare array). Returns snippets with fresh
+ * ids/timestamps so importing never collides with or overwrites existing ones.
+ * Throws a human-readable error on malformed input.
+ */
+export function parseSnippetImport(text: string): Snippet[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Not valid JSON.");
+  }
+  const list = Array.isArray(parsed)
+    ? parsed
+    : (parsed as SnippetExport | null)?.snippets;
+  if (!Array.isArray(list)) {
+    throw new Error('Expected a snippet array or a { "snippets": [...] } export.');
+  }
+  const valid = list.filter(isSnippetLike);
+  if (valid.length === 0) {
+    throw new Error("No valid snippets found in the file.");
+  }
+  const now = Date.now();
+  return valid.map((s, i) => ({
+    id: uid(),
+    name: s.name,
+    description: typeof s.description === "string" ? s.description : "",
+    code: s.code,
+    createdAt: now - (valid.length - i),
+    updatedAt: now,
+  }));
 }

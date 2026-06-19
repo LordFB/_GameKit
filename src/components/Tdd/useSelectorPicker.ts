@@ -74,7 +74,75 @@ function normalizeTestIdAttribute(value?: string): string {
   return /^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(attr) ? attr : "data-test";
 }
 
-/** Build the best available Playwright-style query for an element. */
+/** Heuristic for CSS-modules / styled hashed class names like `Button_btn__a3f9x`
+ *  or `css-1q2w3e` — they change on every build, so selectors built from them
+ *  rot immediately. We skip these in the CSS fallback. */
+function isHashedClass(name: string): boolean {
+  return (
+    /__[A-Za-z0-9]{5,}$/.test(name) || // CSS Modules: name__hash
+    /(?:^|[-_])[a-z]?[0-9a-f]{5,}$/i.test(name) || // emotion/styled: css-1ab2c3
+    /\d/.test(name.slice(-4)) // trailing digits are usually generated
+  );
+}
+
+/** First non-hashed class on the element, if any. */
+function stableClass(el: Element): string | null {
+  if (typeof el.className !== "string") return null;
+  const classes = el.className.trim().split(/\s+/).filter(Boolean);
+  return classes.find((c) => !isHashedClass(c)) ?? null;
+}
+
+/** Elements matching a selector, excluding the toolkit's own UI (`data-tdd-ui`)
+ *  so counts/indices reflect the page a real Playwright run would see, not the
+ *  overlay. */
+function queryPage(selector: string): Element[] {
+  if (typeof document === "undefined") return [];
+  try {
+    return Array.from(document.querySelectorAll(selector)).filter(
+      (el) => !el.closest("[data-tdd-ui]")
+    );
+  } catch {
+    return [];
+  }
+}
+
+/** Count how many elements a role+name query matches, and the target's index
+ *  among them — used to decide whether a locator needs .first()/.nth(). */
+function roleMatches(role: string, name: string): Element[] {
+  const ROLE_SELECTORS: Record<string, string> = {
+    button: 'button, [role="button"], input[type="button"], input[type="submit"]',
+    link: 'a[href], [role="link"]',
+    heading: 'h1, h2, h3, h4, h5, h6, [role="heading"]',
+    textbox: 'input:not([type="hidden"]):not([type="button"]):not([type="submit"]), textarea, [role="textbox"]',
+    checkbox: 'input[type="checkbox"], [role="checkbox"]',
+    radio: 'input[type="radio"], [role="radio"]',
+    img: 'img, [role="img"]',
+  };
+  const selector = ROLE_SELECTORS[role] ?? `[role="${role}"]`;
+  const lower = name.toLowerCase();
+  return queryPage(selector).filter((candidate) => {
+    if (!name) return true;
+    const actual = accessibleName(candidate).toLowerCase();
+    return actual === lower || actual.includes(lower);
+  });
+}
+
+/** Number of elements a CSS selector matches in the live page (0 when unavailable). */
+function cssCount(selector: string): number {
+  return queryPage(selector).length;
+}
+
+/** Append a chain qualifier when a selector matches more than one element, so
+ *  the inserted assertion resolves to exactly the element the user picked
+ *  instead of throwing "matched N elements". */
+function disambiguate(snippetSelector: string, index: number, total: number): string {
+  if (total <= 1 || index < 0) return snippetSelector;
+  return index === 0 ? `${snippetSelector}.first()` : `${snippetSelector}.nth(${index})`;
+}
+
+/** Build the best available Playwright-style query for an element. Each
+ *  candidate is checked against the live DOM for uniqueness and disambiguated
+ *  with .first()/.nth(i) when it matches more than one element. */
 export function describeSelector(
   el: Element,
   configuredTestIdAttribute = "data-test"
@@ -87,12 +155,16 @@ export function describeSelector(
 
   if (testId) {
     const selector = `getByTestId("${escapeText(testId)}")`;
+    const matches = cssCount(`[${testIdAttribute}="${escapeAttrValue(testId)}"]`);
+    const index = matches > 1 ? indexAmong(`[${testIdAttribute}="${escapeAttrValue(testId)}"]`, el) : -1;
+    const located = disambiguate(`page.${selector}`, index, matches);
     return {
       label: `${tag}[${testIdAttribute}="${testId}"]`,
       selector,
-      snippet: `await expect(page.${selector}).toBeAttached();`,
+      snippet: `await expect(${located}).toBeAttached();`,
     };
   }
+  // id is unique by definition — no disambiguation needed.
   if (el.id) {
     return locatorPicked(`${tag}#${el.id}`, `#${escapeIdent(el.id)}`);
   }
@@ -114,10 +186,13 @@ export function describeSelector(
   }
   if (role && name) {
     const selector = `getByRole("${role}", { name: "${escapeText(name)}" })`;
+    const matches = roleMatches(role, name);
+    const index = matches.indexOf(el);
+    const located = disambiguate(`page.${selector}`, index, matches.length);
     return {
-      label: `${role} "${name}"`,
+      label: matches.length > 1 ? `${role} "${name}" (${index + 1}/${matches.length})` : `${role} "${name}"`,
       selector,
-      snippet: `await expect(page.${selector}).toBeVisible();`,
+      snippet: `await expect(${located}).toBeVisible();`,
     };
   }
   if (name) {
@@ -130,15 +205,65 @@ export function describeSelector(
   }
   if (role) {
     const selector = `getByRole("${role}")`;
+    const matches = roleMatches(role, "");
+    const index = matches.indexOf(el);
+    const located = disambiguate(`page.${selector}`, index, matches.length);
     return {
-      label: role,
+      label: matches.length > 1 ? `${role} (${index + 1}/${matches.length})` : role,
       selector,
-      snippet: `await expect(page.${selector}).toBeAttached();`,
+      snippet: `await expect(${located}).toBeAttached();`,
     };
   }
-  // Last resort: a CSS selector via document.querySelector.
-  const css = el.className && typeof el.className === "string" ? `${tag}.${escapeIdent(el.className.trim().split(/\s+/)[0])}` : tag;
-  return locatorPicked(css, css);
+  // Last resort: a CSS selector. Prefer a stable (non-hashed) class; otherwise
+  // fall back to a structural nth-of-type path so the selector is deterministic
+  // instead of pinned to a build-specific hashed class name.
+  const stable = stableClass(el);
+  if (stable) {
+    const css = `${tag}.${escapeIdent(stable)}`;
+    const count = cssCount(css);
+    const index = count > 1 ? indexAmong(css, el) : -1;
+    const located = disambiguate(`page.locator("${escapeText(css)}")`, index, count);
+    return {
+      label: count > 1 ? `${css} (${index + 1}/${count})` : css,
+      selector: `locator("${escapeText(css)}")`,
+      snippet: `await expect(${located}).toBeAttached();`,
+    };
+  }
+  const path = structuralSelector(el);
+  return locatorPicked(path, path);
+}
+
+/** Index of `el` among page elements matching a CSS selector (−1 if not found). */
+function indexAmong(selector: string, el: Element): number {
+  return queryPage(selector).indexOf(el);
+}
+
+/** A deterministic structural selector (`main > div:nth-of-type(2) > button`),
+ *  used only when nothing semantic or stable is available. Walks up at most a
+ *  few levels to keep it short while staying unique. */
+function structuralSelector(el: Element): string {
+  const parts: string[] = [];
+  let node: Element | null = el;
+  while (node && node.nodeType === Node.ELEMENT_NODE && parts.length < 5) {
+    const tag = node.tagName.toLowerCase();
+    if (node.id) {
+      parts.unshift(`#${escapeIdent(node.id)}`);
+      break;
+    }
+    const parent: Element | null = node.parentElement;
+    if (!parent) {
+      parts.unshift(tag);
+      break;
+    }
+    const sameTag = Array.from(parent.children).filter(
+      (c) => c.tagName === node!.tagName
+    );
+    const nth = sameTag.indexOf(node) + 1;
+    parts.unshift(sameTag.length > 1 ? `${tag}:nth-of-type(${nth})` : tag);
+    if (tag === "body" || tag === "main") break;
+    node = parent;
+  }
+  return parts.join(" > ");
 }
 
 interface PickerState {
