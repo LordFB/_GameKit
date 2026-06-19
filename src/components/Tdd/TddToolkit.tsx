@@ -10,23 +10,26 @@
    Security boundary (concept §Security boundary): this is effectively an eval
    console, so it renders `null` unless NODE_ENV === "development" (or an
    explicit `enabled` flag is passed). Never ship it enabled to production.
-   ========================================================================== */
 
-/* Every <img> here renders a base64 data URL (a captured screenshot / pixel
-   diff). next/image can't optimize data URLs and needs known dimensions, so a
-   plain <img> is correct for this dev-only overlay. */
-/* eslint-disable @next/next/no-img-element */
+   This file is the orchestrator. The heavy lifting lives in focused modules:
+   - visualDiff.ts          non-blocking perceptual screenshot diffing
+   - monaco/                CDN editor loader, types, completions, editor component
+   - components.tsx         presentational pieces + modals (focus-trapped)
+   - hooks.ts               useEscape / useFocusTrap / clipboard feedback
+   - state.ts               run + visual-diff reducers
+   - runAll.ts              bounded-concurrency "run all"
+   ========================================================================== */
 
 import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import { TddIcon } from "./icons";
-import type { TddIconName } from "./icons";
 import {
   loadSnippets,
   saveSnippets,
@@ -42,168 +45,28 @@ import {
 } from "./storage";
 import type { Snippet } from "./storage";
 import { runSnippet, RUNNER_MODES, RUNNER_GLOBALS } from "./testRunner";
-import type { RunOutcome, RunnerMode, ScreenshotAttachment } from "./testRunner";
+import type { RunOutcome, RunnerMode } from "./testRunner";
 import { captureScreenshotPair, runViaBridge } from "./bridge";
-import type { ScreenshotPair } from "./bridge";
+import { diffScreenshots } from "./visualDiff";
 import { useSelectorPicker } from "./useSelectorPicker";
+import { MonacoSnippetEditor } from "./monaco/MonacoSnippetEditor";
+import { useEscape, useFocusTrap, useCopyFeedback } from "./hooks";
+import {
+  runReducer,
+  initialRunState,
+  visualReducer,
+  initialVisualState,
+} from "./state";
+import { runMany } from "./runAll";
+import {
+  ToolbarButton,
+  SidebarAction,
+  VisualShot,
+  VisualCompareModal,
+  ScreenshotGalleryModal,
+} from "./components";
+import type { ScreenshotGallery } from "./components";
 import "./tdd.css";
-
-const MONACO_SNIPPETS: Array<{ label: string; insertText: string; description: string; doc: string }> = [
-  {
-    label: "pw-getByRole",
-    insertText: 'page.getByRole("${1:button}", { name: ${2:/name/i} })',
-    description: "Locator by ARIA role + accessible name",
-    doc: "Finds an element by semantic role. Prefer this for buttons, links, headings, and form controls.",
-  },
-  {
-    label: "pw-getByText",
-    insertText: "page.getByText(${1:/text/i})",
-    description: "Locator whose text matches",
-    doc: "Finds visible text on the page. Useful for copy and status messages.",
-  },
-  {
-    label: "pw-getByTestId",
-    insertText: 'page.getByTestId("${1:id}")',
-    description: "Locator by configured test-id attribute",
-    doc: "Finds an element by the dashboard's configured test-id attribute. Defaults to data-test.",
-  },
-  {
-    label: "pw-getByLabel",
-    insertText: 'page.getByLabel("${1:Email}")',
-    description: "Form control by label",
-    doc: "Finds an input, select, or textarea by its accessible label.",
-  },
-  {
-    label: "pw-visible",
-    insertText: "await expect(${1:locator}).toBeVisible();",
-    description: "Assert a locator is rendered and visible",
-    doc: "Web-first assertion. Playwright waits for the locator to become visible before failing.",
-  },
-  {
-    label: "pw-text",
-    insertText: "await expect(${1:locator}).toHaveText(${2:/text/i});",
-    description: "Assert locator text matches",
-    doc: "Checks exact or regex text content. Use regex for resilient assertions.",
-  },
-  {
-    label: "pw-click",
-    insertText: 'await page.getByRole("${1:button}", { name: ${2:/name/i} }).click();',
-    description: "Click a matching locator",
-    doc: "Clicks a role-based locator. This needs the Playwright bridge for real browser automation.",
-  },
-  {
-    label: "pw-screenshot",
-    insertText: 'await page.screenshot({ path: "screenshots/${1:home}.png", fullPage: true });',
-    description: "Capture a Playwright screenshot and attach it to results",
-    doc: "Bridge-only. Captured screenshots are attached to the test result and can be opened in the gallery.",
-  },
-  {
-    label: "pw-toHaveScreenshot",
-    insertText: 'await expect(page).toHaveScreenshot("${1:home}.png");',
-    description: "Snapshot assertion for exported Playwright tests",
-    doc: "For exported Playwright tests. Compares the current page to a stored screenshot snapshot.",
-  },
-  {
-    label: "pw-test",
-    insertText: 'test("${1:does something}", async () => {\n  ${2:// assertions}\n});',
-    description: "Create a Playwright-compatible test block",
-    doc: "Registers a test case in the toolkit runner. Use async when awaiting locators, actions, or screenshots.",
-  },
-];
-
-const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
-
-type MonacoApi = {
-  KeyMod: { CtrlCmd: number };
-  KeyCode: { Enter: number; KeyS: number };
-  Range: new (
-    startLineNumber: number,
-    startColumn: number,
-    endLineNumber: number,
-    endColumn: number
-  ) => unknown;
-  editor: {
-    create: (el: HTMLElement, options: Record<string, unknown>) => MonacoEditorInstance;
-    defineTheme: (name: string, theme: Record<string, unknown>) => void;
-  };
-  languages: {
-    CompletionItemKind: {
-      Snippet: number;
-      Function: number;
-      Method: number;
-      Variable: number;
-    };
-    CompletionItemInsertTextRule: { InsertAsSnippet: number };
-    registerCompletionItemProvider: (
-      language: string,
-      provider: Record<string, unknown>
-    ) => { dispose: () => void };
-    typescript: {
-      typescriptDefaults: {
-        setCompilerOptions: (options: Record<string, unknown>) => void;
-        addExtraLib: (source: string, path?: string) => { dispose: () => void };
-      };
-      ScriptTarget: { ESNext: string };
-      ModuleResolutionKind: { NodeJs: string };
-    };
-  };
-};
-
-type MonacoEditorInstance = {
-  dispose: () => void;
-  getValue: () => string;
-  setValue: (value: string) => void;
-  focus: () => void;
-  onDidChangeModelContent: (listener: () => void) => { dispose: () => void };
-  addCommand: (keybinding: number, handler: () => void) => string | null;
-  getModel: () => {
-    getValue: () => string;
-    getOffsetAt: (position: { lineNumber: number; column: number }) => number;
-  } | null;
-  getSelection: () => {
-    startLineNumber: number;
-    startColumn: number;
-    endLineNumber: number;
-    endColumn: number;
-  } | null;
-  executeEdits: (source: string, edits: Array<{ range: unknown; text: string; forceMoveMarkers: boolean }>) => void;
-};
-
-declare global {
-  interface Window {
-    monaco?: MonacoApi;
-    require?: {
-      config: (options: Record<string, unknown>) => void;
-      (deps: string[], callback: () => void): void;
-    };
-    __tddMonacoLoader?: Promise<MonacoApi>;
-  }
-}
-
-function loadMonaco(): Promise<MonacoApi> {
-  if (typeof window === "undefined") return Promise.reject(new Error("Monaco is client-only."));
-  if (window.monaco) return Promise.resolve(window.monaco);
-  if (window.__tddMonacoLoader) return window.__tddMonacoLoader;
-
-  window.__tddMonacoLoader = new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-tdd-monaco-loader="true"]');
-    const script = existing ?? document.createElement("script");
-    script.dataset.tddMonacoLoader = "true";
-    script.src = `${MONACO_CDN}/loader.js`;
-    script.async = true;
-    script.onload = () => {
-      window.require?.config({ paths: { vs: MONACO_CDN } });
-      window.require?.(["vs/editor/editor.main"], () => {
-        if (window.monaco) resolve(window.monaco);
-        else reject(new Error("Monaco loaded but did not expose window.monaco."));
-      });
-    };
-    script.onerror = () => reject(new Error("Could not load Monaco from the CDN."));
-    if (!existing) document.head.appendChild(script);
-  });
-
-  return window.__tddMonacoLoader;
-}
 
 export interface TddToolkitProps {
   /** Force-enable even outside development (e.g. a staging demo). Default false. */
@@ -217,28 +80,6 @@ interface TabState {
   [id: string]: string;
 }
 
-interface VisualDiffResult extends ScreenshotPair {
-  diffPng: string;
-  mismatchPixels: number;
-  comparedPixels: number;
-  mismatchRatio: number;
-}
-
-interface ScreenshotGallery {
-  title: string;
-  screenshots: ScreenshotAttachment[];
-  index: number;
-}
-
-function loadPng(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Could not decode screenshot PNG."));
-    img.src = src;
-  });
-}
-
 /** Trigger a browser download of in-memory text content. */
 function downloadFile(content: string, filename: string, mime: string): void {
   const blob = new Blob([content], { type: mime });
@@ -248,134 +89,6 @@ function downloadFile(content: string, filename: string, mime: string): void {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-/** Perceptual color distance (0–1), weighted for human luminance sensitivity
- *  like pixelmatch's YIQ metric. Tolerant of small per-channel noise. */
-function colorDelta(
-  a: Uint8ClampedArray,
-  b: Uint8ClampedArray,
-  i: number
-): number {
-  // Blend over white so alpha differences don't read as huge color jumps.
-  const af = a[i + 3] / 255;
-  const bf = b[i + 3] / 255;
-  const ar = a[i] * af + 255 * (1 - af);
-  const ag = a[i + 1] * af + 255 * (1 - af);
-  const ab = a[i + 2] * af + 255 * (1 - af);
-  const br = b[i] * bf + 255 * (1 - bf);
-  const bg = b[i + 1] * bf + 255 * (1 - bf);
-  const bb = b[i + 2] * bf + 255 * (1 - bf);
-  const y = 0.29889531 * (ar - br) + 0.58662247 * (ag - bg) + 0.11448223 * (ab - bb);
-  const i2 = 0.59597799 * (ar - br) - 0.2741761 * (ag - bg) - 0.32180189 * (ab - bb);
-  const q = 0.21147017 * (ar - br) - 0.52261711 * (ag - bg) + 0.31114694 * (ab - bb);
-  // Normalize to 0–1 (max ~= 35215 for full black↔white).
-  return (0.5053 * y * y + 0.299 * i2 * i2 + 0.1957 * q * q) / 35215;
-}
-
-/** True when a differing pixel is likely anti-aliasing: surrounded by neighbors
- *  with both higher and lower contrast in the *same* image (an edge), so the
- *  sub-pixel difference is rendering noise, not a real visual change. */
-function isAntialiased(
-  data: Uint8ClampedArray,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-): boolean {
-  let zeroes = 0;
-  const pos = (y * width + x) * 4;
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-      const npos = (ny * width + nx) * 4;
-      const same =
-        data[pos] === data[npos] &&
-        data[pos + 1] === data[npos + 1] &&
-        data[pos + 2] === data[npos + 2];
-      if (same && ++zeroes > 2) return true;
-    }
-  }
-  return false;
-}
-
-async function diffScreenshots(pair: ScreenshotPair): Promise<VisualDiffResult> {
-  const [target, reference] = await Promise.all([
-    loadPng(pair.targetPng),
-    loadPng(pair.referencePng),
-  ]);
-  // Normalize to the target's intrinsic size. The reference may decode at a
-  // different device-pixel-ratio or resolution; scaling it onto the target's
-  // grid keeps rows aligned instead of cropping to min() (which misaligned
-  // everything and reported ~100% diff for any size mismatch).
-  const width = target.naturalWidth;
-  const height = target.naturalHeight;
-  const targetCanvas = document.createElement("canvas");
-  const referenceCanvas = document.createElement("canvas");
-  const diffCanvas = document.createElement("canvas");
-  targetCanvas.width = referenceCanvas.width = diffCanvas.width = width;
-  targetCanvas.height = referenceCanvas.height = diffCanvas.height = height;
-
-  const targetCtx = targetCanvas.getContext("2d");
-  const referenceCtx = referenceCanvas.getContext("2d");
-  const diffCtx = diffCanvas.getContext("2d");
-  if (!targetCtx || !referenceCtx || !diffCtx) {
-    throw new Error("Canvas is not available for visual diffing.");
-  }
-
-  targetCtx.drawImage(target, 0, 0, width, height);
-  // Scale the reference to fit the target's dimensions.
-  referenceCtx.drawImage(reference, 0, 0, width, height);
-  const targetData = targetCtx.getImageData(0, 0, width, height);
-  const referenceData = referenceCtx.getImageData(0, 0, width, height);
-  const diffData = diffCtx.createImageData(width, height);
-  const t = targetData.data;
-  const r = referenceData.data;
-  // Matches the visible "X% diff" badge; ~10% perceptual delta reads as changed.
-  const THRESHOLD = 0.1;
-  let mismatchPixels = 0;
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
-      const delta = colorDelta(t, r, i);
-      // A pixel only counts as changed if it exceeds the threshold AND is not
-      // anti-aliasing in either image — sub-pixel text edges no longer flood
-      // the diff red.
-      const changed =
-        delta > THRESHOLD &&
-        !isAntialiased(t, x, y, width, height) &&
-        !isAntialiased(r, x, y, width, height);
-      if (changed) {
-        mismatchPixels += 1;
-        diffData.data[i] = 239;
-        diffData.data[i + 1] = 68;
-        diffData.data[i + 2] = 68;
-        diffData.data[i + 3] = 255;
-      } else {
-        const gray = Math.round((t[i] + t[i + 1] + t[i + 2]) / 3);
-        diffData.data[i] = gray;
-        diffData.data[i + 1] = gray;
-        diffData.data[i + 2] = gray;
-        diffData.data[i + 3] = 80;
-      }
-    }
-  }
-
-  diffCtx.putImageData(diffData, 0, 0);
-  const comparedPixels = width * height;
-  return {
-    ...pair,
-    width,
-    height,
-    diffPng: diffCanvas.toDataURL("image/png"),
-    mismatchPixels,
-    comparedPixels,
-    mismatchRatio: comparedPixels === 0 ? 0 : mismatchPixels / comparedPixels,
-  };
 }
 
 export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitProps) {
@@ -406,20 +119,12 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   const [runnerMode, setRunnerMode] = useState<RunnerMode>("in-page");
   // Page the Playwright bridge drives. Relative paths resolve against the dev origin.
   const [bridgeUrl, setBridgeUrl] = useState("/");
-  const [visualTargetUrl, setVisualTargetUrl] = useState("/");
-  const [visualReferenceUrl, setVisualReferenceUrl] = useState("");
-  const [visualRunning, setVisualRunning] = useState(false);
-  const [visualResult, setVisualResult] = useState<VisualDiffResult | null>(null);
-  const [visualError, setVisualError] = useState<string | null>(null);
-  const [visualModalOpen, setVisualModalOpen] = useState(false);
-  const [visualSlider, setVisualSlider] = useState(50);
   const [screenshotGallery, setScreenshotGallery] = useState<ScreenshotGallery | null>(null);
-  const [outcome, setOutcome] = useState<RunOutcome | null>(null);
-  const [running, setRunning] = useState(false);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [logExpanded, setLogExpanded] = useState<Set<number>>(new Set());
-  const [copied, setCopied] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+
+  const [run, dispatchRun] = useReducer(runReducer, initialRunState);
+  const [visual, dispatchVisual] = useReducer(visualReducer, initialVisualState);
+  const { copied, copyFailed, copy } = useCopyFeedback();
 
   const editorInsertRef = useRef<((text: string) => boolean) | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -464,12 +169,12 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
 
   const handleDuplicate = useCallback(() => {
     if (!active) return;
-    const copy = duplicateSnippet({ ...active, code: draftCode });
+    const copySnippet = duplicateSnippet({ ...active, code: draftCode });
     const idx = snippets.findIndex((s) => s.id === active.id);
     const next = [...snippets];
-    next.splice(idx + 1, 0, copy);
+    next.splice(idx + 1, 0, copySnippet);
     persist(next);
-    setActiveId(copy.id);
+    setActiveId(copySnippet.id);
   }, [active, draftCode, persist, snippets]);
 
   const handleDelete = useCallback(() => {
@@ -525,15 +230,6 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
 
   /* ---- run -------------------------------------------------------------- */
 
-  // Show an outcome and auto-expand any failed rows.
-  const applyOutcome = useCallback((result: RunOutcome) => {
-    setOutcome(result);
-    setLogExpanded(new Set());
-    setExpanded(
-      new Set(result.results.map((r, i) => (r.status === "failed" ? i : -1)).filter((i) => i >= 0))
-    );
-  }, []);
-
   // Run one snippet through whichever runner is selected.
   const runOne = useCallback(
     async (code: string): Promise<RunOutcome> => {
@@ -550,57 +246,53 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
 
   const handleRun = useCallback(async () => {
     if (!active) return;
-    setRunning(true);
-    setExpanded(new Set());
-    setLogExpanded(new Set());
+    dispatchRun({ type: "start" });
     try {
       // Yield a frame so the loading state paints before a (sync) in-page run blocks.
       await new Promise((r) => requestAnimationFrame(r));
-      applyOutcome(await runOne(draftCode));
+      dispatchRun({ type: "finish", outcome: await runOne(draftCode) });
     } catch (err) {
-      applyOutcome({
-        results: [{ name: "runner", status: "failed", durationMs: 0, error: String(err), logs: [] }],
-        total: 1, passed: 0, failed: 1, durationMs: 0, ranAt: Date.now(),
+      dispatchRun({
+        type: "finish",
+        outcome: {
+          results: [{ name: "runner", status: "failed", durationMs: 0, error: String(err), logs: [] }],
+          total: 1,
+          passed: 0,
+          failed: 1,
+          durationMs: 0,
+          ranAt: Date.now(),
+        },
       });
-    } finally {
-      setRunning(false);
     }
-  }, [active, draftCode, runOne, applyOutcome]);
+  }, [active, draftCode, runOne]);
 
   const handleRunAll = useCallback(async () => {
     if (snippets.length === 0) return;
-    setRunning(true);
-    setExpanded(new Set());
-    setLogExpanded(new Set());
+    dispatchRun({ type: "start" });
     await new Promise((r) => requestAnimationFrame(r));
-    const merged: RunOutcome = { results: [], total: 0, passed: 0, failed: 0, durationMs: 0, ranAt: Date.now() };
-    for (const s of snippets) {
-      const r = await runOne(drafts[s.id] ?? s.code);
-      merged.results.push(...r.results.map((x) => ({ ...x, name: `${s.name} › ${x.name}` })));
-      merged.durationMs += r.durationMs;
-    }
-    merged.total = merged.results.length;
-    merged.passed = merged.results.filter((r) => r.status === "passed").length;
-    merged.failed = merged.total - merged.passed;
-    applyOutcome(merged);
-    setRunning(false);
-  }, [snippets, drafts, runOne, applyOutcome]);
+    const jobs = snippets.map((s) => ({ id: s.id, name: s.name, code: drafts[s.id] ?? s.code }));
+    // The in-page runner shares a single live DOM, so it must stay serial; the
+    // bridge spins up isolated pages and benefits from running several at once.
+    const concurrency = runnerMode === "playwright" ? 4 : 1;
+    const merged = await runMany(jobs, runOne, {
+      concurrency,
+      onProgress: (soFar) => dispatchRun({ type: "finish", outcome: soFar }),
+    });
+    dispatchRun({ type: "finish", outcome: merged });
+  }, [snippets, drafts, runnerMode, runOne]);
 
   const handleVisualCompare = useCallback(async () => {
-    setVisualRunning(true);
-    setVisualError(null);
+    dispatchVisual({ type: "start" });
     try {
-      const pair = await captureScreenshotPair(visualTargetUrl, visualReferenceUrl);
-      setVisualResult(await diffScreenshots(pair));
-      setVisualModalOpen(true);
-      setVisualSlider(50);
+      const pair = await captureScreenshotPair(visual.targetUrl, visual.referenceUrl);
+      const result = await diffScreenshots(pair, {
+        onProgress: (ratio) => dispatchVisual({ type: "progress", ratio }),
+      });
+      dispatchVisual({ type: "success", result });
     } catch (err) {
-      setVisualError(err instanceof Error ? err.message : String(err));
-      setVisualResult(null);
-    } finally {
-      setVisualRunning(false);
+      dispatchVisual({ type: "error", message: err instanceof Error ? err.message : String(err) });
     }
-  }, [visualTargetUrl, visualReferenceUrl]);
+  }, [visual.targetUrl, visual.referenceUrl]);
 
   /* ---- selector picker -------------------------------------------------- */
 
@@ -652,9 +344,7 @@ ${exportedBody}
   const handleExportAll = useCallback(() => {
     if (snippets.length === 0) return;
     const withDrafts = snippets.map((s) =>
-      drafts[s.id] !== undefined && drafts[s.id] !== s.code
-        ? { ...s, code: drafts[s.id] }
-        : s
+      drafts[s.id] !== undefined && drafts[s.id] !== s.code ? { ...s, code: drafts[s.id] } : s
     );
     downloadFile(
       serializeSnippets(withDrafts),
@@ -668,6 +358,13 @@ ${exportedBody}
       setImportError(null);
       try {
         const imported = parseSnippetImport(await file.text());
+        // parseSnippetImport already rejects empty results, but guard the
+        // indexing defensively so a future change can't throw a confusing
+        // "cannot read id of undefined".
+        if (imported.length === 0) {
+          setImportError("No snippets found in the file.");
+          return;
+        }
         persist([...imported, ...snippets]);
         setActiveId(imported[0].id);
       } catch (err) {
@@ -677,13 +374,6 @@ ${exportedBody}
     [persist, snippets]
   );
 
-  const copy = useCallback((text: string, key: string) => {
-    navigator.clipboard?.writeText(text).then(() => {
-      setCopied(key);
-      setTimeout(() => setCopied((c) => (c === key ? null : c)), 1200);
-    });
-  }, []);
-
   const insertScreenshotCommand = useCallback(() => {
     const baseName = active?.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "page";
     const command = `await page.screenshot({ path: "screenshots/${baseName}.png", fullPage: true });`;
@@ -692,30 +382,22 @@ ${exportedBody}
       updateDraft(`${draftCode}${draftCode.endsWith("\n") ? "" : "\n"}${command}\n`);
       return;
     }
-    copy(command, "screenshot-command");
+    void copy(command, "screenshot-command");
   }, [active, copy, draftCode, updateDraft]);
 
-  /* ---- keyboard: Esc closes the panel ----------------------------------- */
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && screenshotGallery) {
-        setScreenshotGallery(null);
-        return;
-      }
-      if (e.key === "Escape" && visualModalOpen) {
-        setVisualModalOpen(false);
-        return;
-      }
-      if (e.key === "Escape" && !picker.active && renamingId === null) setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, picker.active, renamingId, visualModalOpen, screenshotGallery]);
+  /* ---- keyboard: Esc closes the panel (modals own their own Esc) --------- */
+  // Only fires when no modal is open and we aren't mid-rename or picking, so
+  // there's no precedence ladder reading stale modal state.
+  const panelEscapeActive =
+    open && !visual.modalOpen && !screenshotGallery && !picker.active && renamingId === null;
+  useEscape(panelEscapeActive, () => setOpen(false));
+
+  const panelRef = useFocusTrap<HTMLDivElement>(open && !overlayHidden);
 
   if (!isDev || !mounted) return null;
 
   const fmtTime = (t: number) => new Date(t).toLocaleTimeString();
+  const { outcome } = run;
 
   return (
     <>
@@ -743,7 +425,7 @@ ${exportedBody}
           aria-label="Next.js TDD Toolkit"
           aria-modal="false"
         >
-          <div className="tdd-shell">
+          <div className="tdd-shell" ref={panelRef}>
             <button
               type="button"
               className="tdd-icon-button tdd-close"
@@ -772,11 +454,11 @@ ${exportedBody}
                     type="button"
                     className="tdd-button"
                     data-variant="primary"
-                    data-state={running ? "loading" : undefined}
+                    data-state={run.running ? "loading" : undefined}
                     onClick={() => void handleRun()}
-                    disabled={!active || running}
+                    disabled={!active || run.running}
                   >
-                    {!running && <TddIcon name="run" size={13} />}
+                    {!run.running && <TddIcon name="run" size={13} />}
                     {runnerMode === "playwright" ? "Run in Playwright" : "Run against current page"}
                     <span className="tdd-kbd">⌘↵</span>
                   </button>
@@ -784,7 +466,7 @@ ${exportedBody}
                     type="button"
                     className="tdd-button"
                     onClick={() => void handleRunAll()}
-                    disabled={running || snippets.length === 0}
+                    disabled={run.running || snippets.length === 0}
                   >
                     <TddIcon name="run" size={13} /> Run all
                   </button>
@@ -792,12 +474,7 @@ ${exportedBody}
 
                 <div className="tdd-toolbar-group">
                   <ToolbarButton icon="plus" label="New" onClick={handleNew} />
-                  <ToolbarButton
-                    icon="save"
-                    label="Save"
-                    onClick={handleSave}
-                    disabled={!isDirty}
-                  />
+                  <ToolbarButton icon="save" label="Save" onClick={handleSave} disabled={!isDirty} />
                   <ToolbarButton icon="duplicate" label="Duplicate" onClick={handleDuplicate} disabled={!active} />
                   <ToolbarButton icon="trash" label="Delete" variant="danger" onClick={handleDelete} disabled={!active} />
                 </div>
@@ -951,10 +628,7 @@ ${exportedBody}
                     <div className="tdd-editor-status">
                       <span>TypeScript</span>
                       <span>{draftCode.split("\n").length} lines</span>
-                      <span>
-                        globals:{" "}
-                        {RUNNER_GLOBALS.join(", ")}
-                      </span>
+                      <span>globals: {RUNNER_GLOBALS.join(", ")}</span>
                     </div>
                   </div>
                 </section>
@@ -987,8 +661,8 @@ ${exportedBody}
                       </div>
                       <div className="tdd-result-list">
                         {outcome.results.map((r, i) => {
-                          const isOpen = expanded.has(i);
-                          const logsOpen = logExpanded.has(i);
+                          const isOpen = run.expanded.has(i);
+                          const logsOpen = run.logExpanded.has(i);
                           const screenshots = r.screenshots ?? [];
                           return (
                             <div
@@ -1004,14 +678,7 @@ ${exportedBody}
                                 <button
                                   type="button"
                                   className="tdd-result-toggle"
-                                  onClick={() =>
-                                    setExpanded((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(i)) next.delete(i);
-                                      else next.add(i);
-                                      return next;
-                                    })
-                                  }
+                                  onClick={() => dispatchRun({ type: "toggle-expanded", index: i })}
                                 >
                                   <span className="tdd-result-name">{r.name}</span>
                                   {screenshots.length > 0 && (
@@ -1025,14 +692,7 @@ ${exportedBody}
                                     type="button"
                                     className="tdd-log-toggle"
                                     aria-expanded={logsOpen}
-                                    onClick={() =>
-                                      setLogExpanded((prev) => {
-                                        const next = new Set(prev);
-                                        if (next.has(i)) next.delete(i);
-                                        else next.add(i);
-                                        return next;
-                                      })
-                                    }
+                                    onClick={() => dispatchRun({ type: "toggle-log", index: i })}
                                   >
                                     {logsOpen ? "Hide logs" : `Show logs (${r.logs.length})`}
                                   </button>
@@ -1058,6 +718,7 @@ ${exportedBody}
                                           })
                                         }
                                       >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img src={shot.dataUrl} alt={shot.name} />
                                         <span>{shot.name}</span>
                                       </button>
@@ -1122,9 +783,13 @@ ${exportedBody}
                         <button
                           type="button"
                           className="tdd-button"
-                          onClick={() => copy(picker.picked!.snippet, "picked")}
+                          onClick={() => void copy(picker.picked!.snippet, "picked")}
                         >
-                          {copied === "picked" ? "Copied!" : "Copy"}
+                          {copied === "picked"
+                            ? "Copied!"
+                            : copyFailed === "picked"
+                              ? "Copy failed"
+                              : "Copy"}
                         </button>
                       </div>
                     </div>
@@ -1196,9 +861,9 @@ ${exportedBody}
                       <h2 className="tdd-panel-title" style={{ fontSize: "var(--tdd-text-md)" }}>
                         Visual Diff
                       </h2>
-                      {visualResult && (
-                        <span className="tdd-badge" data-tone={visualResult.mismatchRatio > 0.01 ? "danger" : "success"}>
-                          {(visualResult.mismatchRatio * 100).toFixed(2)}% diff
+                      {visual.result && (
+                        <span className="tdd-badge" data-tone={visual.result.mismatchRatio > 0.01 ? "danger" : "success"}>
+                          {(visual.result.mismatchRatio * 100).toFixed(2)}% diff
                         </span>
                       )}
                     </div>
@@ -1208,8 +873,8 @@ ${exportedBody}
                         <span className="tdd-picker-hint">Local path</span>
                         <input
                           className="tdd-input tdd-mono"
-                          value={visualTargetUrl}
-                          onChange={(e) => setVisualTargetUrl(e.target.value)}
+                          value={visual.targetUrl}
+                          onChange={(e) => dispatchVisual({ type: "set-target", url: e.target.value })}
                           placeholder="/"
                           aria-label="Visual diff local target path"
                         />
@@ -1218,8 +883,8 @@ ${exportedBody}
                         <span className="tdd-picker-hint">Reference URL</span>
                         <input
                           className="tdd-input tdd-mono"
-                          value={visualReferenceUrl}
-                          onChange={(e) => setVisualReferenceUrl(e.target.value)}
+                          value={visual.referenceUrl}
+                          onChange={(e) => dispatchVisual({ type: "set-reference", url: e.target.value })}
                           placeholder="https://example.com/"
                           aria-label="Visual diff reference URL"
                         />
@@ -1231,12 +896,14 @@ ${exportedBody}
                         type="button"
                         className="tdd-button"
                         data-variant="primary"
-                        data-state={visualRunning ? "loading" : undefined}
+                        data-state={visual.running ? "loading" : undefined}
                         onClick={() => void handleVisualCompare()}
-                        disabled={visualRunning || !visualReferenceUrl.trim()}
+                        disabled={visual.running || !visual.referenceUrl.trim()}
                       >
-                        {!visualRunning && <TddIcon name="browser" size={13} />}
-                        Compare screenshots
+                        {!visual.running && <TddIcon name="browser" size={13} />}
+                        {visual.running
+                          ? `Comparing… ${Math.round(visual.progress * 100)}%`
+                          : "Compare screenshots"}
                       </button>
                       <button type="button" className="tdd-button" onClick={insertScreenshotCommand}>
                         <TddIcon name="copy" size={13} />
@@ -1245,27 +912,27 @@ ${exportedBody}
                       <button
                         type="button"
                         className="tdd-button"
-                        onClick={() => setVisualModalOpen(true)}
-                        disabled={!visualResult}
+                        onClick={() => dispatchVisual({ type: "open-modal" })}
+                        disabled={!visual.result}
                       >
                         <TddIcon name="target" size={13} />
                         Open comparison
                       </button>
                     </div>
 
-                    {visualError && <pre className="tdd-error-block">{visualError}</pre>}
+                    {visual.error && <pre className="tdd-error-block">{visual.error}</pre>}
 
-                    {visualResult ? (
+                    {visual.result ? (
                       <>
                         <div className="tdd-visual-meta">
-                          <span>{visualResult.width}x{visualResult.height}</span>
-                          <span>{visualResult.durationMs} ms</span>
-                          <span>{visualResult.mismatchPixels.toLocaleString()} pixels changed</span>
+                          <span>{visual.result.width}x{visual.result.height}</span>
+                          <span>{visual.result.durationMs} ms</span>
+                          <span>{visual.result.mismatchPixels.toLocaleString()} pixels changed</span>
                         </div>
                         <div className="tdd-visual-grid">
-                          <VisualShot title="Local" url={visualResult.targetUrl} src={visualResult.targetPng} />
-                          <VisualShot title="Reference" url={visualResult.referenceUrl} src={visualResult.referencePng} />
-                          <VisualShot title="Diff" url="red pixels changed" src={visualResult.diffPng} />
+                          <VisualShot title="Local" url={visual.result.targetUrl} src={visual.result.targetPng} />
+                          <VisualShot title="Reference" url={visual.result.referenceUrl} src={visual.result.referencePng} />
+                          <VisualShot title="Diff" url="red pixels changed" src={visual.result.diffPng} />
                         </div>
                       </>
                     ) : (
@@ -1298,80 +965,23 @@ ${exportedBody}
                 <span className="tdd-status-item tdd-subtle">dev-only · process.env.NODE_ENV = development</span>
               </div>
 
-              {visualModalOpen && visualResult && (
-                <div
-                  className="tdd-compare-backdrop"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-label="Visual screenshot comparison"
-                >
-                  <div className="tdd-compare-modal">
-                    <div className="tdd-compare-header">
-                      <div>
-                        <h2>Visual comparison</h2>
-                        <p>
-                          {(visualResult.mismatchRatio * 100).toFixed(2)}% changed ·{" "}
-                          {visualResult.mismatchPixels.toLocaleString()} pixels
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="tdd-icon-button"
-                        onClick={() => setVisualModalOpen(false)}
-                        aria-label="Close visual comparison"
-                      >
-                        <TddIcon name="close" />
-                      </button>
-                    </div>
-
-                    <div className="tdd-compare-frame">
-                      <img
-                        className="tdd-compare-image"
-                        src={visualResult.targetPng}
-                        alt="Local screenshot"
-                      />
-                      <img
-                        className="tdd-compare-image tdd-compare-image-top"
-                        src={visualResult.referencePng}
-                        alt="Reference screenshot"
-                        style={{ clipPath: `inset(0 ${100 - visualSlider}% 0 0)` }}
-                      />
-                      <div className="tdd-compare-divider" style={{ left: `${visualSlider}%` }}>
-                        <span />
-                      </div>
-                      <span className="tdd-compare-label" data-side="left">Reference</span>
-                      <span className="tdd-compare-label" data-side="right">Local</span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={visualSlider}
-                        onChange={(e) => setVisualSlider(Number(e.target.value))}
-                        className="tdd-compare-range"
-                        aria-label="Image comparison slider"
-                      />
-                    </div>
-
-                    <div className="tdd-compare-footer">
-                      <div>
-                        <strong>Local</strong>
-                        <span>{visualResult.targetUrl}</span>
-                      </div>
-                      <div>
-                        <strong>Reference</strong>
-                        <span>{visualResult.referenceUrl}</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="tdd-button"
-                        onClick={() => copy(visualResult.diffPng, "diff-png")}
-                      >
-                        <TddIcon name={copied === "diff-png" ? "check" : "copy"} size={13} />
-                        {copied === "diff-png" ? "Copied diff" : "Copy diff PNG"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+              {visual.modalOpen && visual.result && (
+                <VisualCompareModal
+                  result={visual.result}
+                  slider={visual.slider}
+                  onSlider={(value) => dispatchVisual({ type: "set-slider", value })}
+                  onClose={() => dispatchVisual({ type: "close-modal" })}
+                  onCopyDiff={() => void copy(visual.result!.diffPng, "diff-png")}
+                  copyLabel={{
+                    icon: copied === "diff-png" ? "check" : "copy",
+                    text:
+                      copied === "diff-png"
+                        ? "Copied diff"
+                        : copyFailed === "diff-png"
+                          ? "Copy failed"
+                          : "Copy diff PNG",
+                  }}
+                />
               )}
 
               {screenshotGallery && (
@@ -1379,9 +989,7 @@ ${exportedBody}
                   gallery={screenshotGallery}
                   onClose={() => setScreenshotGallery(null)}
                   onIndexChange={(index) =>
-                    setScreenshotGallery((current) =>
-                      current ? { ...current, index } : current
-                    )
+                    setScreenshotGallery((current) => (current ? { ...current, index } : current))
                   }
                 />
               )}
@@ -1390,470 +998,5 @@ ${exportedBody}
         </div>
       )}
     </>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-
-function MonacoSnippetEditor({
-  value,
-  onChange,
-  onRun,
-  onSave,
-  registerInsert,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onRun: () => void;
-  onSave: () => void;
-  registerInsert: (fn: ((text: string) => boolean) | null) => void;
-}) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const editorRef = useRef<MonacoEditorInstance | null>(null);
-  const monacoRef = useRef<MonacoApi | null>(null);
-  const valueRef = useRef(value);
-  const onChangeRef = useRef(onChange);
-  const onRunRef = useRef(onRun);
-  const onSaveRef = useRef(onSave);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  // Keep the latest props in refs for the long-lived Monaco callbacks (which are
-  // wired once on mount). Synced in an effect — not during render — so we never
-  // mutate a ref while rendering.
-  useEffect(() => {
-    valueRef.current = value;
-    onChangeRef.current = onChange;
-    onRunRef.current = onRun;
-    onSaveRef.current = onSave;
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    let changeSub: { dispose: () => void } | null = null;
-    let extraLib: { dispose: () => void } | null = null;
-    let completionSub: { dispose: () => void } | null = null;
-
-    loadMonaco().then(
-      (monaco) => {
-        if (cancelled || !hostRef.current) return;
-        monacoRef.current = monaco;
-        monaco.editor.defineTheme("tdd-dark", {
-          base: "vs-dark",
-          inherit: true,
-          rules: [
-            { token: "comment", foreground: "6b7280", fontStyle: "italic" },
-            { token: "string", foreground: "fbbf24" },
-            { token: "keyword", foreground: "60a5fa" },
-            { token: "number", foreground: "34d399" },
-          ],
-          colors: {
-            "editor.background": "#070a0f",
-            "editor.foreground": "#dbeafe",
-            "editorLineNumber.foreground": "#475569",
-            "editorLineNumber.activeForeground": "#93c5fd",
-            "editorCursor.foreground": "#60a5fa",
-            "editor.selectionBackground": "#1d4ed880",
-            "editor.lineHighlightBackground": "#ffffff08",
-          },
-        });
-        monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-          target: monaco.languages.typescript.ScriptTarget.ESNext,
-          moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-          allowNonTsExtensions: true,
-          noEmit: true,
-          strict: false,
-        });
-        extraLib = monaco.languages.typescript.typescriptDefaults.addExtraLib(
-          `type Role = "button" | "link" | "heading" | "textbox" | "checkbox" | "img" | "list" | "listitem" | string;
-type TextMatcher = string | RegExp;
-interface TddLocator {
-  first(): TddLocator;
-  nth(index: number): TddLocator;
-  count(): Promise<number>;
-  click(): Promise<void>;
-  fill(value: string): Promise<void>;
-  getAttribute(name: string): Promise<string | null>;
-  textContent(): Promise<string | null>;
-}
-interface TddPage {
-  goto(url: string): Promise<void>;
-  getByRole(role: Role, options?: { name?: TextMatcher }): TddLocator;
-  getByText(text: TextMatcher): TddLocator;
-  getByTestId(id: string): TddLocator;
-  getByLabel(text: TextMatcher): TddLocator;
-  getByPlaceholder(text: TextMatcher): TddLocator;
-  locator(selector: string): TddLocator;
-  screenshot(options?: { path?: string; fullPage?: boolean }): Promise<Uint8Array>;
-  title(): Promise<string> | string;
-  url(): string;
-}
-interface TddExpect {
-  toBeVisible(): Promise<void>;
-  toBeAttached(): Promise<void>;
-  toBeDisabled(): Promise<void>;
-  toHaveText(text: TextMatcher): Promise<void>;
-  toHaveTextContent(text: TextMatcher): Promise<void>;
-  toHaveAttribute(name: string, value?: string | RegExp): Promise<void>;
-  toHaveTitle(text: TextMatcher): Promise<void>;
-  toHaveScreenshot(name: string): Promise<void>;
-  not: TddExpect;
-}
-declare const page: TddPage;
-declare const expect: (actual: unknown) => TddExpect;
-declare const test: (name: string, fn: () => unknown | Promise<unknown>) => void;
-declare const it: typeof test;
-declare const console: Console;`,
-          "file:///tdd-globals.d.ts"
-        );
-        completionSub = monaco.languages.registerCompletionItemProvider("typescript", {
-          triggerCharacters: [".", "p", "e", "t"],
-          provideCompletionItems: (model: {
-            getWordUntilPosition: (position: unknown) => { startColumn: number; endColumn: number };
-          }, position: { lineNumber: number; column: number }) => {
-            const word = model.getWordUntilPosition(position);
-            const range = {
-              startLineNumber: position.lineNumber,
-              endLineNumber: position.lineNumber,
-              startColumn: word.startColumn,
-              endColumn: word.endColumn,
-            };
-            const snippetSuggestions = MONACO_SNIPPETS.map((snippet) => ({
-              label: snippet.label,
-              kind: monaco.languages.CompletionItemKind.Snippet,
-              insertText: snippet.insertText,
-              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              documentation: {
-                value: `**${snippet.label}**\n\n${snippet.doc}\n\n\`\`\`ts\n${snippet.insertText.replace(/\$\{\d+:([^}]+)\}/g, "$1")}\n\`\`\``,
-              },
-              detail: snippet.description,
-              range,
-            }));
-            const apiSuggestions = [
-              {
-                label: "page",
-                detail: "Playwright page global",
-                kind: monaco.languages.CompletionItemKind.Variable,
-                doc: "Main browser page object. In bridge mode it is a real Playwright Page; in local mode it provides locator-compatible helpers only.",
-              },
-              {
-                label: "expect",
-                detail: "Playwright expect assertion",
-                kind: monaco.languages.CompletionItemKind.Function,
-                doc: "Wrap a locator, page, or primitive value and call a matcher like `toBeVisible()` or `toHaveText()`.",
-              },
-              {
-                label: "test",
-                detail: "Register a test case",
-                kind: monaco.languages.CompletionItemKind.Function,
-                doc: "Registers a named test. The toolkit reports each registered test as a separate result row.",
-              },
-              {
-                label: "getByRole",
-                detail: "Locate by ARIA role",
-                kind: monaco.languages.CompletionItemKind.Method,
-                doc: "Preferred locator for user-facing elements. Example: `page.getByRole(\"button\", { name: /save/i })`.",
-              },
-              {
-                label: "getByText",
-                detail: "Locate by visible text",
-                kind: monaco.languages.CompletionItemKind.Method,
-                doc: "Finds text content. Good for status messages and headings when role is not enough.",
-              },
-              {
-                label: "getByTestId",
-                detail: "Locate by configured test-id attribute",
-                kind: monaco.languages.CompletionItemKind.Method,
-                doc: "Stable fallback when semantic locators are hard to express. The attribute is configured in the TDD dashboard.",
-              },
-              {
-                label: "getByLabel",
-                detail: "Locate form control by label",
-                kind: monaco.languages.CompletionItemKind.Method,
-                doc: "Finds inputs by their accessible label. Example: `page.getByLabel(\"Email\")`.",
-              },
-              {
-                label: "locator",
-                detail: "Locate by CSS selector",
-                kind: monaco.languages.CompletionItemKind.Method,
-                doc: "CSS selector fallback. Prefer role/text/label locators when possible.",
-              },
-              {
-                label: "screenshot",
-                detail: "Capture and attach screenshot",
-                kind: monaco.languages.CompletionItemKind.Method,
-                doc: "Bridge-only. `await page.screenshot({ path: \"screenshots/home.png\" })` attaches the PNG to the test output.",
-              },
-              {
-                label: "toBeVisible",
-                detail: "Assert visible",
-                kind: monaco.languages.CompletionItemKind.Method,
-                doc: "Web-first assertion. Waits until the locator is visible or times out.",
-              },
-              {
-                label: "toBeAttached",
-                detail: "Assert attached to DOM",
-                kind: monaco.languages.CompletionItemKind.Method,
-                doc: "Checks that the element exists in the document, visible or not.",
-              },
-              {
-                label: "toHaveText",
-                detail: "Assert text",
-                kind: monaco.languages.CompletionItemKind.Method,
-                doc: "Checks locator text. Supports strings and regular expressions.",
-              },
-              {
-                label: "toHaveScreenshot",
-                detail: "Assert screenshot snapshot",
-                kind: monaco.languages.CompletionItemKind.Method,
-                doc: "For exported Playwright tests. Compares the page or locator against a stored snapshot.",
-              },
-            ].map(({ label, detail, kind, doc }) => ({
-              label,
-              kind,
-              insertText: label,
-              detail,
-              documentation: { value: `**${label}**\n\n${doc}` },
-              range,
-            }));
-
-            return { suggestions: [...snippetSuggestions, ...apiSuggestions] };
-          },
-        });
-
-        const editor = monaco.editor.create(hostRef.current, {
-          value: valueRef.current,
-          language: "typescript",
-          theme: "tdd-dark",
-          automaticLayout: true,
-          minimap: { enabled: false },
-          fontFamily: "var(--tdd-font-mono)",
-          fontSize: 14,
-          lineHeight: 22,
-          tabSize: 2,
-          insertSpaces: true,
-          scrollBeyondLastLine: false,
-          renderLineHighlight: "line",
-          padding: { top: 12, bottom: 12 },
-          wordWrap: "off",
-          fixedOverflowWidgets: true,
-          suggest: {
-            showInlineDetails: true,
-            showStatusBar: true,
-          },
-          quickSuggestions: {
-            other: true,
-            comments: false,
-            strings: true,
-          },
-        });
-        editorRef.current = editor;
-        changeSub = editor.onDidChangeModelContent(() => {
-          const next = editor.getValue();
-          valueRef.current = next;
-          onChangeRef.current(next);
-        });
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => onRunRef.current());
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => onSaveRef.current());
-      },
-      (err) => {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err));
-      }
-    );
-
-    return () => {
-      cancelled = true;
-      registerInsert(null);
-      changeSub?.dispose();
-      extraLib?.dispose();
-      completionSub?.dispose();
-      editorRef.current?.dispose();
-      editorRef.current = null;
-    };
-  }, [registerInsert]);
-
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor || editor.getValue() === value) return;
-    valueRef.current = value;
-    editor.setValue(value);
-  }, [value]);
-
-  useEffect(() => {
-    registerInsert((text: string) => {
-      const editor = editorRef.current;
-      const monaco = monacoRef.current;
-      const model = editor?.getModel();
-      const selection = editor?.getSelection();
-      if (!editor || !monaco || !model || !selection) return false;
-      const offset = model.getOffsetAt({
-        lineNumber: selection.startLineNumber,
-        column: selection.startColumn,
-      });
-      const current = model.getValue();
-      const prefix = offset > 0 && current[offset - 1] !== "\n" ? "\n" : "";
-      const suffix = text.endsWith("\n") ? "" : "\n";
-      editor.executeEdits("tdd-insert", [
-        {
-          range: new monaco.Range(
-            selection.startLineNumber,
-            selection.startColumn,
-            selection.endLineNumber,
-            selection.endColumn
-          ),
-          text: `${prefix}${text}${suffix}`,
-          forceMoveMarkers: true,
-        },
-      ]);
-      editor.focus();
-      return true;
-    });
-    return () => registerInsert(null);
-  }, [registerInsert]);
-
-  return (
-    <div className="tdd-monaco-shell">
-      <div ref={hostRef} className="tdd-monaco-editor" aria-label="Test snippet editor" />
-      {loadError && <div className="tdd-monaco-error">{loadError}</div>}
-    </div>
-  );
-}
-
-function ToolbarButton({
-  icon, label, onClick, disabled, variant,
-}: {
-  icon: TddIconName;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  variant?: "danger";
-}) {
-  return (
-    <button
-      type="button"
-      className="tdd-button"
-      data-variant={variant}
-      onClick={onClick}
-      disabled={disabled}
-    >
-      <TddIcon name={icon} size={13} /> {label}
-    </button>
-  );
-}
-
-function SidebarAction({
-  icon, label, onClick, disabled, variant,
-}: {
-  icon: TddIconName;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  variant?: "danger";
-}) {
-  return (
-    <button
-      type="button"
-      className="tdd-button"
-      data-variant={variant}
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      style={{ height: 32, padding: "0 6px", fontSize: 11 }}
-    >
-      <TddIcon name={icon} size={13} />
-    </button>
-  );
-}
-
-function VisualShot({ title, url, src }: { title: string; url: string; src: string }) {
-  return (
-    <figure className="tdd-visual-shot">
-      <div className="tdd-visual-shot-header">
-        <strong>{title}</strong>
-        <span>{url}</span>
-      </div>
-      <img src={src} alt={`${title} screenshot`} />
-    </figure>
-  );
-}
-
-function ScreenshotGalleryModal({
-  gallery,
-  onClose,
-  onIndexChange,
-}: {
-  gallery: ScreenshotGallery;
-  onClose: () => void;
-  onIndexChange: (index: number) => void;
-}) {
-  const active = gallery.screenshots[gallery.index];
-  const lastIndex = gallery.screenshots.length - 1;
-  const move = (delta: number) => {
-    onIndexChange(Math.min(lastIndex, Math.max(0, gallery.index + delta)));
-  };
-
-  return (
-    <div
-      className="tdd-shot-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Test screenshot gallery"
-    >
-      <div className="tdd-shot-modal">
-        <div className="tdd-shot-header">
-          <div>
-            <h2>{gallery.title}</h2>
-            <p>
-              {gallery.index + 1} of {gallery.screenshots.length} · {active.name}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="tdd-icon-button"
-            onClick={onClose}
-            aria-label="Close screenshot gallery"
-          >
-            <TddIcon name="close" />
-          </button>
-        </div>
-
-        <div className="tdd-shot-stage">
-          <button
-            type="button"
-            className="tdd-shot-nav"
-            onClick={() => move(-1)}
-            disabled={gallery.index === 0}
-            aria-label="Previous screenshot"
-          >
-            {"<"}
-          </button>
-          <img src={active.dataUrl} alt={active.name} />
-          <button
-            type="button"
-            className="tdd-shot-nav"
-            onClick={() => move(1)}
-            disabled={gallery.index === lastIndex}
-            aria-label="Next screenshot"
-          >
-            {">"}
-          </button>
-        </div>
-
-        <div className="tdd-shot-footer">
-          <div>
-            <strong>{active.width}x{active.height}</strong>
-            {active.path && <span>{active.path}</span>}
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={lastIndex}
-            value={gallery.index}
-            onChange={(e) => onIndexChange(Number(e.target.value))}
-            disabled={gallery.screenshots.length <= 1}
-            aria-label="Screenshot gallery slider"
-          />
-        </div>
-      </div>
-    </div>
   );
 }
