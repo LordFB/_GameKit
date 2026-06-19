@@ -11,9 +11,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "GameKit — CSS-Compatible Game Toolkit Design System",
+  title: "Next TDD toolkit demo - GameKit",
   description:
-    "A sophisticated, extensible, token-driven design system for game toolkits. Stateful components, gamepad-safe focus, light/dark theming.",
+    "Next.js TDD Toolkit demo built with GameKit, a collection of tools and best practices for building games and interactive experiences with Next.js.",
 };
 
 export default function RootLayout({
