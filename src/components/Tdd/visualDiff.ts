@@ -9,8 +9,8 @@
      chunked across frames (`requestIdleCallback`/`requestAnimationFrame`) and
      reports progress, so the UI stays responsive and can show a progress bar.
    - It must be tolerant of rendering noise. `colorDelta` is a YIQ perceptual
-     metric (pixelmatch-style) and anti-aliased edges are ignored, so sub-pixel
-     text rendering doesn't flood the diff red.
+     metric with a perceptual threshold, so small sub-pixel rendering changes
+     do not flood the diff red.
    ========================================================================== */
 
 import type { ScreenshotPair } from "./bridge";
@@ -73,35 +73,6 @@ function colorDelta(
   const q = 0.21147017 * (ar - br) - 0.52261711 * (ag - bg) + 0.31114694 * (ab - bb);
   // Normalize to 0–1 (max ~= 35215 for full black↔white).
   return (0.5053 * y * y + 0.299 * i2 * i2 + 0.1957 * q * q) / 35215;
-}
-
-/** True when a differing pixel is likely anti-aliasing: surrounded by neighbors
- *  with identical color in the *same* image (an edge), so the sub-pixel
- *  difference is rendering noise, not a real visual change. */
-function isAntialiased(
-  data: Uint8ClampedArray,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-): boolean {
-  let zeroes = 0;
-  const pos = (y * width + x) * 4;
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-      const npos = (ny * width + nx) * 4;
-      const same =
-        data[pos] === data[npos] &&
-        data[pos + 1] === data[npos + 1] &&
-        data[pos + 2] === data[npos + 2];
-      if (same && ++zeroes > 2) return true;
-    }
-  }
-  return false;
 }
 
 /** Schedule a callback during idle time, falling back to rAF where
@@ -167,13 +138,9 @@ export function diffScreenshots(
           for (; y < endY; y++) {
             for (let x = 0; x < width; x++) {
               const i = (y * width + x) * 4;
-              // A pixel only counts as changed if it exceeds the threshold AND
-              // is not anti-aliasing in either image — sub-pixel text edges no
-              // longer flood the diff red.
-              const changed =
-                colorDelta(t, r, i) > THRESHOLD &&
-                !isAntialiased(t, x, y, width, height) &&
-                !isAntialiased(r, x, y, width, height);
+              // A pixel only counts as changed if it exceeds the perceptual threshold.
+              // This deliberately includes flat regions with different colors.
+              const changed = colorDelta(t, r, i) > THRESHOLD;
               if (changed) {
                 mismatchPixels += 1;
                 d[i] = 239;

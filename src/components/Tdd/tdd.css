@@ -1692,6 +1692,20 @@
   background: #0f172a;
 }
 
+.tdd-visual-shot-image {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: zoom-in;
+}
+
+.tdd-visual-shot-image:focus-visible {
+  outline: none;
+  box-shadow: var(--tdd-glow-blue);
+}
+
 .tdd-compare-backdrop {
   position: fixed;
   inset: 0;
@@ -1823,7 +1837,7 @@
 
 .tdd-compare-footer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
   border-top: 1px solid var(--tdd-border);
 }
 

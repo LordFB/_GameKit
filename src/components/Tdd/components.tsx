@@ -5,7 +5,7 @@
    diff). next/image can't optimize data URLs and needs known dimensions, so a
    plain <img> is correct for this dev-only overlay. */
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { TddIcon } from "./icons";
 import type { TddIconName } from "./icons";
 import { useEscape, useFocusTrap } from "./hooks";
@@ -72,14 +72,30 @@ export function SidebarAction({
   );
 }
 
-export function VisualShot({ title, url, src }: { title: string; url: string; src: string }) {
+export function VisualShot({
+  title,
+  url,
+  src,
+  onOpen,
+}: {
+  title: string;
+  url: string;
+  src: string;
+  onOpen?: () => void;
+}) {
   return (
     <figure className="tdd-visual-shot">
       <div className="tdd-visual-shot-header">
         <strong>{title}</strong>
         <span>{url}</span>
       </div>
-      <img src={src} alt={`${title} screenshot`} />
+      {onOpen ? (
+        <button type="button" className="tdd-visual-shot-image" onClick={onOpen} aria-label={`Open ${title} image`}>
+          <img src={src} alt={`${title} screenshot`} />
+        </button>
+      ) : (
+        <img src={src} alt={`${title} screenshot`} />
+      )}
     </figure>
   );
 }
@@ -99,6 +115,7 @@ export function VisualCompareModal({
   onCopyDiff: () => void;
   copyLabel: { icon: TddIconName; text: string };
 }) {
+  const [showDiff, setShowDiff] = useState(false);
   useEscape(true, onClose);
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
@@ -124,31 +141,36 @@ export function VisualCompareModal({
         </div>
 
         <div className="tdd-compare-frame">
-          <img className="tdd-compare-image" src={result.targetPng} alt="Local screenshot" />
-          <img
-            className="tdd-compare-image tdd-compare-image-top"
-            src={result.referencePng}
-            alt="Reference screenshot"
-            style={{ clipPath: `inset(0 ${100 - slider}% 0 0)` }}
-          />
-          <div className="tdd-compare-divider" style={{ left: `${slider}%` }}>
-            <span />
-          </div>
-          <span className="tdd-compare-label" data-side="left">
-            Reference
-          </span>
-          <span className="tdd-compare-label" data-side="right">
-            Local
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={slider}
-            onChange={(e) => onSlider(Number(e.target.value))}
-            className="tdd-compare-range"
-            aria-label="Image comparison slider"
-          />
+          {showDiff ? (
+            <>
+              <img className="tdd-compare-image" src={result.diffPng} alt="Visual difference image" />
+              <span className="tdd-compare-label" data-side="left">Diff</span>
+            </>
+          ) : (
+            <>
+              <img className="tdd-compare-image" src={result.targetPng} alt="Local screenshot" />
+              <img
+                className="tdd-compare-image tdd-compare-image-top"
+                src={result.referencePng}
+                alt="Reference screenshot"
+                style={{ clipPath: `inset(0 ${100 - slider}% 0 0)` }}
+              />
+              <div className="tdd-compare-divider" style={{ left: `${slider}%` }}>
+                <span />
+              </div>
+              <span className="tdd-compare-label" data-side="left">Reference</span>
+              <span className="tdd-compare-label" data-side="right">Local</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={slider}
+                onChange={(e) => onSlider(Number(e.target.value))}
+                className="tdd-compare-range"
+                aria-label="Image comparison slider"
+              />
+            </>
+          )}
         </div>
 
         <div className="tdd-compare-footer">
@@ -163,6 +185,14 @@ export function VisualCompareModal({
           <button type="button" className="tdd-button" onClick={onCopyDiff}>
             <TddIcon name={copyLabel.icon} size={13} />
             {copyLabel.text}
+          </button>
+          <button
+            type="button"
+            className="tdd-button"
+            aria-pressed={showDiff}
+            onClick={() => setShowDiff((visible) => !visible)}
+          >
+            {showDiff ? "Show slider" : "Show diff image"}
           </button>
         </div>
       </div>

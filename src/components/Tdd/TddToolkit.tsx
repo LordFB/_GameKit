@@ -1290,9 +1290,54 @@ ${exportedBody}
                           <span>{visual.result.mismatchPixels.toLocaleString()} pixels changed</span>
                         </div>
                         <div className="tdd-visual-grid">
-                          <VisualShot title="Local" url={visual.result.targetUrl} src={visual.result.targetPng} />
-                          <VisualShot title="Reference" url={visual.result.referenceUrl} src={visual.result.referencePng} />
-                          <VisualShot title="Diff" url="red pixels changed" src={visual.result.diffPng} />
+                          <VisualShot
+                            title="Local"
+                            url={visual.result.targetUrl}
+                            src={visual.result.targetPng}
+                            onOpen={() =>
+                              setScreenshotGallery({
+                                title: "Visual diff images",
+                                index: 0,
+                                screenshots: [
+                                  { id: "visual-local", name: "Local", dataUrl: visual.result!.targetPng, width: visual.result!.width, height: visual.result!.height, takenAt: visual.result!.capturedAt },
+                                  { id: "visual-reference", name: "Reference", dataUrl: visual.result!.referencePng, width: visual.result!.width, height: visual.result!.height, takenAt: visual.result!.capturedAt },
+                                  { id: "visual-diff", name: "Diff", dataUrl: visual.result!.diffPng, width: visual.result!.width, height: visual.result!.height, takenAt: visual.result!.capturedAt },
+                                ],
+                              })
+                            }
+                          />
+                          <VisualShot
+                            title="Reference"
+                            url={visual.result.referenceUrl}
+                            src={visual.result.referencePng}
+                            onOpen={() =>
+                              setScreenshotGallery({
+                                title: "Visual diff images",
+                                index: 1,
+                                screenshots: [
+                                  { id: "visual-local", name: "Local", dataUrl: visual.result!.targetPng, width: visual.result!.width, height: visual.result!.height, takenAt: visual.result!.capturedAt },
+                                  { id: "visual-reference", name: "Reference", dataUrl: visual.result!.referencePng, width: visual.result!.width, height: visual.result!.height, takenAt: visual.result!.capturedAt },
+                                  { id: "visual-diff", name: "Diff", dataUrl: visual.result!.diffPng, width: visual.result!.width, height: visual.result!.height, takenAt: visual.result!.capturedAt },
+                                ],
+                              })
+                            }
+                          />
+                          <VisualShot
+                            title="Diff"
+                            url="red pixels changed"
+                            src={visual.result.diffPng}
+                            onOpen={() =>
+                              setScreenshotGallery({
+                                title: "Visual diff images",
+                                index: 2,
+                                screenshots: [
+                                  { id: "visual-local", name: "Local", dataUrl: visual.result!.targetPng, width: visual.result!.width, height: visual.result!.height, takenAt: visual.result!.capturedAt },
+                                  { id: "visual-reference", name: "Reference", dataUrl: visual.result!.referencePng, width: visual.result!.width, height: visual.result!.height, takenAt: visual.result!.capturedAt },
+                                  { id: "visual-diff", name: "Diff", dataUrl: visual.result!.diffPng, width: visual.result!.width, height: visual.result!.height, takenAt: visual.result!.capturedAt },
+                                ],
+                              })
+                            }
+                          />
                         </div>
                       </>
                     ) : (

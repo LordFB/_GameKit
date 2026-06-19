@@ -41,6 +41,14 @@ function formatError(err: unknown): string {
   return String(err);
 }
 
+/** Framework-development messages that do not describe the test or page under test. */
+function isDevelopmentConsoleNoise(type: string, text: string): boolean {
+  return (
+    (type === "info" && text.startsWith("%cDownload the React DevTools")) ||
+    (type === "log" && (/^\[HMR\] connected\.?$/.test(text) || /^\[Fast Refresh\]/.test(text)))
+  );
+}
+
 interface RegisteredTest {
   name: string;
   fn: () => Promise<void> | void;
@@ -223,7 +231,11 @@ export async function runViaPlaywright(
     page.getByTestId = getByConfiguredTestId as typeof page.getByTestId;
 
     const logs: string[] = [];
-    page.on("console", (m) => logs.push(`${m.type()}: ${m.text()}`));
+    page.on("console", (m) => {
+      if (!isDevelopmentConsoleNoise(m.type(), m.text())) {
+        logs.push(`${m.type()}: ${m.text()}`);
+      }
+    });
     page.on("pageerror", (e) => logs.push(`pageerror: ${e.message}`));
 
     const setupGoto = () =>
