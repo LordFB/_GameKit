@@ -634,7 +634,7 @@ ${exportedBody}
               <header className="tdd-brand">
                 <span className="tdd-logo">N</span>
                 <div>
-                  <h1 className="tdd-brand-title">Next.js TDD Toolkit</h1>
+                  <h1 className="tdd-brand-title">Next.js - TDD Toolkit</h1>
                   <p className="tdd-brand-subtitle">
                     Write, run, and export page tests while looking at the page.
                   </p>

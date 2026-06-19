@@ -136,7 +136,8 @@
   position: fixed;
   inset: 0;
   z-index: 2147483001;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(2px);
   animation: tdd-fade-in var(--tdd-duration) var(--tdd-ease);
@@ -144,8 +145,11 @@
 
 .tdd-shell {
   position: relative;
-  height: 100vh;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
   padding: var(--tdd-space-4);
   color: var(--tdd-text);
   font-family: var(--tdd-font-sans);
@@ -169,32 +173,35 @@
 }
 
 .tdd-app {
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: var(--tdd-space-3);
   max-width: 1720px;
   margin: 0 auto;
+  width: 100%;
 }
 
 .tdd-main-grid {
-  display: grid;
-  grid-template-columns: 300px minmax(540px, 1fr) 420px;
-  /* Align rows to the top and size to content so a short snippet doesn't leave
-     a tall empty void; each panel caps its own height and scrolls internally. */
-  align-items: start;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: var(--tdd-space-2);
 }
 
 .tdd-bottom-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex: 0 0 auto;
   gap: var(--tdd-space-2);
+  min-height: 0;
 }
 
 .tdd-panel {
   position: relative;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 36%),
@@ -202,6 +209,25 @@
   border: 1px solid var(--tdd-border);
   border-radius: var(--tdd-radius-lg);
   box-shadow: var(--tdd-shadow-sm);
+}
+
+/* BSP sizing: left sidebar is fixed-width, editor is flexible, right is flexible */
+.tdd-main-grid > .tdd-panel:nth-child(1) {
+  flex: 0 0 300px;
+}
+
+.tdd-main-grid > .tdd-panel:nth-child(2) {
+  flex: 1 1 540px;
+}
+
+.tdd-main-grid > .tdd-panel:nth-child(3) {
+  flex: 1 1 420px;
+}
+
+/* Bottom grid: equal thirds */
+.tdd-bottom-grid > .tdd-panel {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .tdd-panel[data-interactive="true"] {
@@ -220,7 +246,7 @@
 
 .tdd-panel-header {
   display: flex;
-  flex: none;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   min-height: 42px;
@@ -285,6 +311,7 @@
 
 .tdd-toolbar {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--tdd-space-2);
@@ -480,12 +507,13 @@
 .tdd-snippets {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
 .tdd-snippet-list {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: var(--tdd-space-1);
   min-height: 0;
@@ -589,7 +617,7 @@
 
 .tdd-sidebar-actions {
   display: grid;
-  flex: none;
+  flex: 0 0 auto;
   grid-template-columns: repeat(4, 1fr);
   gap: var(--tdd-space-2);
   padding: var(--tdd-space-2);
@@ -611,7 +639,7 @@
 
 .tdd-tabs {
   display: flex;
-  flex: none;
+  flex: 0 0 auto;
   align-items: stretch;
   height: 44px;
   overflow-x: auto;
@@ -691,25 +719,25 @@
    -------------------------------------------------------------------------- */
 
 .tdd-editor {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   background: #070a0f;
 }
 
 .tdd-code {
   position: relative;
-  display: grid;
-  grid-template-columns: 52px 1fr;
+  display: flex;
+  flex: 1 1 auto;
   min-height: 0;
-  max-height: 60vh;
-  overflow: auto;
   font-family: var(--tdd-font-mono);
   font-size: 14px;
   line-height: 1.65;
 }
 
 .tdd-code-gutter {
+  flex: 0 0 52px;
   padding: var(--tdd-space-3) var(--tdd-space-2);
   color: var(--tdd-text-subtle);
   text-align: right;
@@ -717,11 +745,15 @@
   background: rgba(255, 255, 255, 0.015);
   border-right: 1px solid var(--tdd-border-subtle);
   user-select: none;
+  overflow-y: auto;
 }
 
 .tdd-code-area {
   position: relative;
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* The highlighted render and the real textarea are stacked pixel-for-pixel so
@@ -777,6 +809,7 @@
 
 .tdd-monaco-shell {
   position: relative;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
   border-top: 1px solid rgba(255, 255, 255, 0.02);
@@ -784,7 +817,7 @@
 
 .tdd-monaco-editor {
   width: 100%;
-  height: clamp(280px, 48vh, 620px);
+  height: 100%;
 }
 
 .tdd-monaco-error {
@@ -803,7 +836,7 @@
 
 .tdd-editor-status {
   display: flex;
-  flex: none;
+  flex: 0 0 auto;
   justify-content: flex-end;
   gap: var(--tdd-space-3);
   height: 30px;
@@ -867,19 +900,20 @@
 .tdd-results {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
 .tdd-result-summary {
   display: flex;
-  flex: none;
+  flex: 0 0 auto;
   gap: var(--tdd-space-2);
   padding: var(--tdd-space-3);
 }
 
 .tdd-result-meta {
   display: flex;
-  flex: none;
+  flex: 0 0 auto;
   justify-content: space-between;
   padding: 0 var(--tdd-space-3) var(--tdd-space-3);
   color: var(--tdd-text-muted);
@@ -889,6 +923,7 @@
 
 .tdd-result-list {
   min-height: 0;
+  flex: 1 1 auto;
   overflow: auto;
 }
 
@@ -1470,6 +1505,7 @@
 .tdd-compare-header,
 .tdd-compare-footer {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--tdd-space-3);
   padding: var(--tdd-space-3);
@@ -1623,6 +1659,7 @@
 .tdd-shot-header,
 .tdd-shot-footer {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--tdd-space-3);
   padding: var(--tdd-space-3);
