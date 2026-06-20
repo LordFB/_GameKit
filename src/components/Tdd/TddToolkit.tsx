@@ -64,6 +64,7 @@ import {
   SidebarAction,
   VisualShot,
   VisualCompareModal,
+  KnowledgeBaseModal,
   ScreenshotGalleryModal,
 } from "./components";
 import type { ScreenshotGallery } from "./components";
@@ -139,6 +140,7 @@ export function TddToolkit({ enabled = false, initialOpen = false }: TddToolkitP
   // Opt-in: let in-page page.goto() load a same-origin route into an iframe.
   const [iframeNavigation, setIframeNavigation] = useState(false);
   const [screenshotGallery, setScreenshotGallery] = useState<ScreenshotGallery | null>(null);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
   const [run, dispatchRun] = useReducer(runReducer, initialRunState);
@@ -450,7 +452,7 @@ ${exportedBody}
   // Only fires when no modal is open and we aren't mid-rename or picking, so
   // there's no precedence ladder reading stale modal state.
   const panelEscapeActive =
-    open && !visual.modalOpen && !screenshotGallery && !picker.active &&
+    open && !visual.modalOpen && !screenshotGallery && !knowledgeOpen && !picker.active &&
     renamingId === null && editingDescriptionId === null;
   useEscape(panelEscapeActive, () => setOpen(false));
 
@@ -488,15 +490,6 @@ ${exportedBody}
           aria-modal="false"
         >
           <div className="tdd-shell" ref={panelRef}>
-            <button
-              type="button"
-              className="tdd-icon-button tdd-close"
-              onClick={() => setOpen(false)}
-              aria-label="Close toolkit"
-            >
-              <TddIcon name="close" />
-            </button>
-
             <div className="tdd-app">
               {/* Toolbar (with inline brand) */}
               <div className="tdd-toolbar">
@@ -561,6 +554,26 @@ ${exportedBody}
                       e.target.value = "";
                     }}
                   />
+                </div>
+                <div className="tdd-toolbar-group tdd-toolbar-help-group">
+                  <button
+                    type="button"
+                    className="tdd-icon-button tdd-toolbar-help"
+                    onClick={() => setKnowledgeOpen(true)}
+                    aria-label="Open TDD Toolkit knowledge base"
+                    title="TDD Toolkit guide"
+                  >
+                    <TddIcon name="question" size={25} />
+                  </button>
+                  <button
+                    type="button"
+                    className="tdd-icon-button tdd-toolbar-close"
+                    onClick={() => setOpen(false)}
+                    aria-label="Close toolkit"
+                    title="Close toolkit"
+                  >
+                    <TddIcon name="close" size={18} />
+                  </button>
                 </div>
               </div>
 
@@ -737,7 +750,15 @@ ${exportedBody}
                     )}
                   </div>
 
-                  {outcome ? (
+                  {run.running ? (
+                    <div className="tdd-results-loading" role="status" aria-live="polite">
+                      <span className="tdd-results-spinner" />
+                      <div>
+                        <strong>Running test{snippets.length > 1 ? "s" : ""}…</strong>
+                        <span>Waiting for the runner response.</span>
+                      </div>
+                    </div>
+                  ) : outcome ? (
                     <>
                       <div className="tdd-result-summary">
                         <span className="tdd-badge" data-tone="success">
@@ -1377,6 +1398,8 @@ ${exportedBody}
                   }
                 />
               )}
+
+              {knowledgeOpen && <KnowledgeBaseModal onClose={() => setKnowledgeOpen(false)} />}
             </div>
           </div>
         </div>

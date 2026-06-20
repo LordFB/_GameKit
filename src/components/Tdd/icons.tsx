@@ -82,6 +82,15 @@ const P: Record<string, React.ReactNode> = {
       <path d="m13.5 5.8 4.7 4.7" />
     </>
   ),
+  question: (
+    <>
+      <circle cx="12" cy="12" r="10.5" />
+      <g transform="translate(2.4 2.4) scale(0.8)">
+        <path strokeWidth={2.5} d="M9.5 9a2.7 2.7 0 1 1 4.3 2.2c-.9.7-1.8 1.2-1.8 2.8" />
+        <path strokeWidth={2.5} d="M12 17h.01" />
+      </g>
+    </>
+  ),
 };
 
 export type TddIconName = keyof typeof P;

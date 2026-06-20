@@ -49,6 +49,7 @@ export function runReducer(state: RunState, action: RunAction): RunState {
     case "start":
       return {
         ...state,
+        outcome: null,
         running: true,
         expanded: new Set(),
         logExpanded: new Set(),
