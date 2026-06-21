@@ -55,7 +55,11 @@ const columns: Column<Player>[] = [
     align: "right",
     sortable: true,
     sortValue: (r) => r.score,
-    cell: (r) => <strong>{r.score.toLocaleString()}</strong>,
+    // Pin the locale: bare toLocaleString() uses the host's locale, so the
+    // server (Node) and client (browser) can pick different group separators
+    // ("12,840" vs "12.840") and mismatch on hydration. A fixed locale renders
+    // identically on every machine.
+    cell: (r) => <strong>{r.score.toLocaleString("en-US")}</strong>,
   },
 ];
 

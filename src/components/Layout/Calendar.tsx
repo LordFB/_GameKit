@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cx } from "@/lib/cx";
 import { Icon } from "../Icon";
 import styles from "./Calendar.module.css";
@@ -27,9 +27,23 @@ function iso(d: Date) {
 /** Calendar / date picker (board: Calendar Widget). Month navigation, today
     highlight, selectable days, event dots. */
 export function Calendar({ events = [], defaultDate, onSelect }: CalendarProps) {
-  const today = new Date();
-  const [view, setView] = useState(defaultDate ?? today);
+  // `today` is read only after mount: reading `new Date()` during render makes
+  // the "today" highlight depend on the render instant, so a server render on a
+  // different day/timezone than the client hydration produces mismatched
+  // className/aria-current and a hydration error. Null until mounted means the
+  // server (and first client render) mark no cell as today; the effect fills it
+  // in post-hydration. See also the SSR-safe pattern in ThemeToggle.
+  const [today, setToday] = useState<Date | null>(null);
+  // The initial view falls back to a fixed epoch month rather than `new Date()`
+  // so the server and client agree on the rendered month before mount; the
+  // effect snaps it to the real current month (when no defaultDate was given).
+  const [view, setView] = useState(defaultDate ?? new Date(0));
   const [selected, setSelected] = useState<Date | null>(defaultDate ?? null);
+  useEffect(() => {
+    const now = new Date();
+    setToday(now);
+    if (!defaultDate) setView(new Date(now.getFullYear(), now.getMonth(), 1));
+  }, [defaultDate]);
   const eventSet = new Set(events);
 
   const year = view.getFullYear();
@@ -82,7 +96,7 @@ export function Calendar({ events = [], defaultDate, onSelect }: CalendarProps) 
         {cells.map((day, i) => {
           if (day === null) return <span key={`e${i}`} />;
           const date = new Date(year, month, day);
-          const isToday = iso(date) === iso(today);
+          const isToday = today !== null && iso(date) === iso(today);
           const isSelected = selected && iso(date) === iso(selected);
           const hasEvent = eventSet.has(iso(date));
           return (
