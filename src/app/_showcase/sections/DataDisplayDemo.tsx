@@ -16,6 +16,7 @@ import {
   type Column,
 } from "@/components";
 import { Section, Tile } from "../Shell";
+import { formatNumber } from "@/lib/formatNumber";
 import styles from "../../showcase.module.css";
 
 interface Player {
@@ -55,11 +56,7 @@ const columns: Column<Player>[] = [
     align: "right",
     sortable: true,
     sortValue: (r) => r.score,
-    // Pin the locale: bare toLocaleString() uses the host's locale, so the
-    // server (Node) and client (browser) can pick different group separators
-    // ("12,840" vs "12.840") and mismatch on hydration. A fixed locale renders
-    // identically on every machine.
-    cell: (r) => <strong>{r.score.toLocaleString("en-US")}</strong>,
+    cell: (r) => <strong>{formatNumber(r.score)}</strong>,
   },
 ];
 
